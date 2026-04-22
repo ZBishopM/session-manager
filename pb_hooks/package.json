@@ -1,0 +1,4 @@
+{
+  "type": "commonjs",
+  "//": "This file only affects Node's interpretation of _core.js during tests. PocketBase's Goja runtime ignores it."
+}

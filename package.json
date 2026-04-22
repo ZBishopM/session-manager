@@ -10,11 +10,14 @@
     "test:coverage": "vitest run --coverage",
     "typecheck": "tsc --noEmit",
     "build:migrations": "tsx scripts/build-migrations.ts",
-    "check:migrations": "npm run build:migrations && git diff --exit-code pb_migrations/"
+    "check:migrations": "npm run build:migrations && git diff --exit-code pb_migrations/",
+    "build:hooks": "tsx scripts/build-hooks.ts",
+    "check:hooks": "npm run build:hooks && git diff --exit-code pb_hooks/_core.js"
   },
   "devDependencies": {
     "@types/node": "^20.11.0",
     "@vitest/coverage-v8": "^1.6.0",
+    "esbuild": "^0.21.0",
     "tsx": "^4.15.0",
     "typescript": "^5.4.0",
     "vitest": "^1.6.0"

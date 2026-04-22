@@ -28,3 +28,6 @@ jobs:
 
       - name: Migrations are up to date with manifest
         run: npm run check:migrations
+
+      - name: Hooks bundle is up to date with source
+        run: npm run check:hooks
