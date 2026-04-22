@@ -38,6 +38,9 @@ jobs:
       - name: Hooks bundle is up to date with source
         run: npm run check:hooks
 
+      - name: Generated record types are up to date with manifest
+        run: npm run check:types
+
       - name: Cache PocketBase binary
         uses: actions/cache@v4
         with:
