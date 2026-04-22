@@ -16,7 +16,9 @@
     "build:migrations": "tsx scripts/build-migrations.ts",
     "check:migrations": "npm run build:migrations && git diff --exit-code pb_migrations/",
     "build:hooks": "tsx scripts/build-hooks.ts",
-    "check:hooks": "npm run build:hooks && git diff --exit-code pb_hooks/_core.js"
+    "check:hooks": "npm run build:hooks && git diff --exit-code pb_hooks/_core.js",
+    "fetch:pocketbase": "tsx scripts/fetch-pocketbase.ts",
+    "test:integration": "tsx scripts/fetch-pocketbase.ts && vitest run tests/integration --config vitest.integration.config.ts"
   },
   "devDependencies": {
     "@sveltejs/adapter-static": "^3.0.5",
@@ -27,6 +29,8 @@
     "@testing-library/user-event": "^14.5.2",
     "@types/node": "^20.11.0",
     "@vitest/coverage-v8": "^1.6.0",
+    "adm-zip": "^0.5.14",
+    "@types/adm-zip": "^0.5.5",
     "esbuild": "^0.21.0",
     "jsdom": "^24.1.0",
     "svelte": "^4.2.18",

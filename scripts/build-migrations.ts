@@ -13,6 +13,7 @@ import {
   COLLECTIONS,
   type CollectionDef,
   type FieldDef,
+  collectionIdFor,
   validateSchema,
 } from "../src/lib/core/schema.js";
 
@@ -71,12 +72,28 @@ export function buildInitMigration(
 }
 
 function collectionToJson(c: CollectionDef): Record<string, unknown> {
+  // PocketBase enforces field uniqueness through SQL indexes, not via a
+  // per-field flag. Promote every field marked `unique: true` to a real
+  // UNIQUE INDEX so identityFields and similar constraints actually hold.
+  const autoIndexes = c.fields
+    .filter((f) => f.unique)
+    .map(
+      (f) =>
+        `CREATE UNIQUE INDEX idx_${c.name}_${f.name} ON ${c.name} (${f.name})`,
+    );
+  const userFields = c.fields.map(fieldToJson);
+  const fields =
+    c.type === "auth"
+      ? [...authSystemFields(), ...userFields]
+      : [...baseSystemFields(), ...userFields];
+
   const base: Record<string, unknown> = {
+    id: collectionIdFor(c.name),
     name: c.name,
     type: c.type ?? "base",
     system: false,
-    fields: c.fields.map(fieldToJson),
-    indexes: [...(c.indexes ?? [])],
+    fields,
+    indexes: [...autoIndexes, ...(c.indexes ?? [])],
     listRule: c.listRule ?? null,
     viewRule: c.viewRule ?? null,
     createRule: c.createRule ?? null,
@@ -85,16 +102,165 @@ function collectionToJson(c: CollectionDef): Record<string, unknown> {
   };
   if (c.type === "auth") {
     base.passwordAuth = {
-      enabled: AUTH_OPTIONS.allowUsernameAuth || AUTH_OPTIONS.allowEmailAuth,
-      identityFields: AUTH_OPTIONS.allowUsernameAuth
-        ? ["username"]
-        : ["email"],
+      enabled: true,
+      identityFields: [...AUTH_OPTIONS.identityFields],
     };
     base.oauth2 = { enabled: false, providers: [] };
+    base.mfa = { enabled: false, duration: 0, rule: "" };
+    base.otp = { enabled: false };
     base.manageRule = null;
     base.authRule = "";
+    base.authToken = { duration: 1209600 };
+    base.passwordResetToken = { duration: 1800 };
+    base.emailChangeToken = { duration: 1800 };
+    base.verificationToken = { duration: 259200 };
+    base.fileToken = { duration: 180 };
   }
   return base;
+}
+
+/**
+ * v0.23+ PocketBase no longer auto-injects `id`, `created`, `updated` into
+ * base collections defined via JSON migrations — we must declare them.
+ * Without `created` the standard `-created` sort key is unavailable.
+ */
+function baseSystemFields(): Array<Record<string, unknown>> {
+  return [
+    {
+      id: "text3208210256",
+      name: "id",
+      type: "text",
+      system: true,
+      required: true,
+      presentable: false,
+      primaryKey: true,
+      hidden: false,
+      min: 15,
+      max: 15,
+      pattern: "^[a-z0-9]+$",
+      autogeneratePattern: "[a-z0-9]{15}",
+    },
+    {
+      id: "autodate2990389176",
+      name: "created",
+      type: "autodate",
+      system: true,
+      hidden: false,
+      presentable: false,
+      onCreate: true,
+      onUpdate: false,
+    },
+    {
+      id: "autodate3332085495",
+      name: "updated",
+      type: "autodate",
+      system: true,
+      hidden: false,
+      presentable: false,
+      onCreate: true,
+      onUpdate: true,
+    },
+  ];
+}
+
+/**
+ * Override the system fields PB injects on every auth collection so that
+ *   - email is optional (we authenticate via nickname),
+ *   - password accepts a 4-character passcode.
+ * Names must match exactly; PB merges by name.
+ */
+function authSystemFields(): Array<Record<string, unknown>> {
+  return [
+    {
+      id: "text3208210256",
+      name: "id",
+      type: "text",
+      system: true,
+      required: true,
+      presentable: false,
+      primaryKey: true,
+      hidden: false,
+      min: 15,
+      max: 15,
+      pattern: "^[a-z0-9]+$",
+      autogeneratePattern: "[a-z0-9]{15}",
+    },
+    {
+      id: "password901924565",
+      name: "password",
+      type: "password",
+      system: true,
+      hidden: true,
+      required: true,
+      presentable: false,
+      min: AUTH_OPTIONS.minPasswordLength,
+      max: 71,
+      pattern: "",
+      cost: 0,
+    },
+    {
+      id: "text2504183744",
+      name: "tokenKey",
+      type: "text",
+      system: true,
+      hidden: true,
+      required: true,
+      presentable: false,
+      min: 30,
+      max: 60,
+      pattern: "",
+      autogeneratePattern: "[a-zA-Z0-9_]{50}",
+    },
+    {
+      id: "email3885137012",
+      name: "email",
+      type: "email",
+      system: true,
+      hidden: false,
+      required: false,
+      presentable: false,
+      onlyDomains: null,
+      exceptDomains: null,
+    },
+    {
+      id: "bool1547992806",
+      name: "emailVisibility",
+      type: "bool",
+      system: true,
+      hidden: false,
+      required: false,
+      presentable: false,
+    },
+    {
+      id: "bool256245529",
+      name: "verified",
+      type: "bool",
+      system: true,
+      hidden: false,
+      required: false,
+      presentable: false,
+    },
+    {
+      id: "autodate2990389176",
+      name: "created",
+      type: "autodate",
+      system: true,
+      hidden: false,
+      presentable: false,
+      onCreate: true,
+      onUpdate: false,
+    },
+    {
+      id: "autodate3332085495",
+      name: "updated",
+      type: "autodate",
+      system: true,
+      hidden: false,
+      presentable: false,
+      onCreate: true,
+      onUpdate: true,
+    },
+  ];
 }
 
 function fieldToJson(f: FieldDef): Record<string, unknown> {
@@ -137,9 +303,9 @@ function fieldToJson(f: FieldDef): Record<string, unknown> {
     case "relation":
       return {
         ...common,
-        collectionId: f.relationTo!,
-        maxSelect: f.maxSelect ?? null,
-        minSelect: null,
+        collectionId: collectionIdFor(f.relationTo!),
+        maxSelect: f.maxSelect ?? 0,
+        minSelect: 0,
         cascadeDelete: f.cascadeDelete ?? false,
       };
     case "file":

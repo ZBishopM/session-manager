@@ -57,9 +57,12 @@ describe("buildInitMigration", () => {
     expect(names).toEqual(["games", "categories"]);
   });
 
-  it("serializes relation fields with collectionId set to target name", () => {
+  it("serializes relation fields with collectionId set to the target's stable id", () => {
     const out = buildInitMigration(minimal);
-    expect(out).toContain('"collectionId": "categories"');
+    // categories collection id is pbc_categories0 (15-char padding)
+    expect(out).toContain('"collectionId": "pbc_categories0"');
+    // and the target collection's own id field uses the same value
+    expect(out).toContain('"id": "pbc_categories0"');
   });
 
   it("marks auth collections with passwordAuth options", () => {

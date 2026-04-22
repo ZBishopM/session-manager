@@ -53,17 +53,28 @@ export interface CollectionDef {
 
 export interface AuthOptions {
   minPasswordLength: number;
-  allowUsernameAuth: boolean;
-  allowEmailAuth: boolean;
-  requireEmail: boolean;
+  identityFields: readonly string[];
 }
 
 export const AUTH_OPTIONS: AuthOptions = {
   minPasswordLength: 4,
-  allowUsernameAuth: true,
-  allowEmailAuth: false,
-  requireEmail: false,
+  identityFields: ["nickname"],
 };
+
+/**
+ * Stable, 15-char alphanumeric ID for a collection. PocketBase v0.23+
+ * requires `collectionId` on relations to point at an existing collection
+ * id (not its name), so we precompute a deterministic id per name. The
+ * `pbc_` prefix mirrors PB's own convention.
+ */
+export function collectionIdFor(name: string): string {
+  const target = 15;
+  const prefix = "pbc_";
+  const room = target - prefix.length;
+  const base = name.replace(/[^a-zA-Z0-9_]/g, "_");
+  if (base.length >= room) return prefix + base.slice(0, room);
+  return prefix + base + "0".repeat(room - base.length);
+}
 
 /**
  * Canonical schema. Order matters: relations can only reference collections
@@ -83,13 +94,15 @@ export const COLLECTIONS: readonly CollectionDef[] = [
   },
 
   {
-    name: "users",
+    name: "players",
     type: "auth",
     fields: [
       { name: "nickname", type: "text", required: true, unique: true, min: 2, max: 24 },
-      { name: "xp", type: "number", required: true, min: 0 },
+      // PocketBase treats required:true on a number field as "must be > 0",
+      // so xp/re_rolls (which start at 0) stay optional with a min:0 floor.
+      { name: "xp", type: "number", min: 0 },
       { name: "level", type: "number", required: true, min: 1 },
-      { name: "re_rolls", type: "number", required: true, min: 0 },
+      { name: "re_rolls", type: "number", min: 0 },
       { name: "favorite_categories", type: "relation", relationTo: "categories" },
     ],
     listRule: "",
@@ -109,8 +122,8 @@ export const COLLECTIONS: readonly CollectionDef[] = [
       { name: "categories", type: "relation", relationTo: "categories" },
       { name: "image", type: "file", maxSelect: 1, maxSize: 2_097_152 },
       { name: "description", type: "text", max: 500 },
-      { name: "owned_by", type: "relation", relationTo: "users" },
-      { name: "created_by", type: "relation", relationTo: "users", maxSelect: 1, required: true },
+      { name: "owned_by", type: "relation", relationTo: "players" },
+      { name: "created_by", type: "relation", relationTo: "players", maxSelect: 1, required: true },
     ],
     listRule: "",
     viewRule: "",
@@ -138,8 +151,8 @@ export const COLLECTIONS: readonly CollectionDef[] = [
     name: "sessions",
     type: "base",
     fields: [
-      { name: "host", type: "relation", relationTo: "users", maxSelect: 1, required: true },
-      { name: "co_host", type: "relation", relationTo: "users", maxSelect: 1 },
+      { name: "host", type: "relation", relationTo: "players", maxSelect: 1, required: true },
+      { name: "co_host", type: "relation", relationTo: "players", maxSelect: 1 },
       { name: "status", type: "select", required: true, maxSelect: 1, options: ["created", "active", "ended"] },
       { name: "started_at", type: "date" },
       { name: "ended_at", type: "date" },
@@ -157,13 +170,13 @@ export const COLLECTIONS: readonly CollectionDef[] = [
     type: "base",
     fields: [
       { name: "session", type: "relation", relationTo: "sessions", maxSelect: 1, required: true, cascadeDelete: true },
-      { name: "user", type: "relation", relationTo: "users", maxSelect: 1, required: true },
+      { name: "player", type: "relation", relationTo: "players", maxSelect: 1, required: true },
       { name: "status", type: "select", required: true, maxSelect: 1, options: ["present", "playing", "spectator", "kicked", "left"] },
       { name: "joined_at", type: "date", required: true },
       { name: "left_at", type: "date" },
     ],
     indexes: [
-      "CREATE UNIQUE INDEX idx_sp_session_user ON session_participants (session, user)",
+      "CREATE UNIQUE INDEX idx_sp_session_player ON session_participants (session, player)",
     ],
     listRule: "",
     viewRule: "",
@@ -190,12 +203,14 @@ export const COLLECTIONS: readonly CollectionDef[] = [
     type: "base",
     fields: [
       { name: "match", type: "relation", relationTo: "matches", maxSelect: 1, required: true, cascadeDelete: true },
-      { name: "user", type: "relation", relationTo: "users", maxSelect: 1, required: true },
+      { name: "player", type: "relation", relationTo: "players", maxSelect: 1, required: true },
       { name: "won", type: "bool" },
-      { name: "liked", type: "bool" },
+      // Tri-state by design: empty = not rated yet. PB bool defaults to false,
+      // which would otherwise be indistinguishable from "rated as 👎".
+      { name: "rating", type: "select", maxSelect: 1, options: ["like", "dislike"] },
     ],
     indexes: [
-      "CREATE UNIQUE INDEX idx_mp_match_user ON match_players (match, user)",
+      "CREATE UNIQUE INDEX idx_mp_match_player ON match_players (match, player)",
     ],
     listRule: "",
     viewRule: "",
@@ -206,26 +221,26 @@ export const COLLECTIONS: readonly CollectionDef[] = [
     type: "base",
     fields: [
       { name: "match", type: "relation", relationTo: "matches", maxSelect: 1, required: true, cascadeDelete: true },
-      { name: "user", type: "relation", relationTo: "users", maxSelect: 1, required: true },
+      { name: "player", type: "relation", relationTo: "players", maxSelect: 1, required: true },
       { name: "game", type: "relation", relationTo: "games", maxSelect: 1 },
     ],
     indexes: [
-      "CREATE UNIQUE INDEX idx_votes_match_user ON votes (match, user)",
+      "CREATE UNIQUE INDEX idx_votes_match_player ON votes (match, player)",
     ],
     listRule: "",
     viewRule: "",
   },
 
   {
-    name: "user_achievements",
+    name: "player_achievements",
     type: "base",
     fields: [
-      { name: "user", type: "relation", relationTo: "users", maxSelect: 1, required: true, cascadeDelete: true },
+      { name: "player", type: "relation", relationTo: "players", maxSelect: 1, required: true, cascadeDelete: true },
       { name: "achievement", type: "relation", relationTo: "achievements", maxSelect: 1, required: true, cascadeDelete: true },
       { name: "unlocked_at", type: "date", required: true },
     ],
     indexes: [
-      "CREATE UNIQUE INDEX idx_ua_user_achievement ON user_achievements (user, achievement)",
+      "CREATE UNIQUE INDEX idx_pa_player_achievement ON player_achievements (player, achievement)",
     ],
     listRule: "",
     viewRule: "",

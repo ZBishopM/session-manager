@@ -11,12 +11,13 @@
  */
 
 onRecordAfterCreateSuccess((e) => {
-  const game = e.record;
-  const apiKey = $os.getenv("ANTHROPIC_API_KEY");
-  if (!apiKey) {
-    console.log("[game_created] ANTHROPIC_API_KEY not set, skipping achievement generation");
-    return;
-  }
+  try {
+    const game = e.record;
+    const apiKey = $os.getenv("ANTHROPIC_API_KEY");
+    if (!apiKey) {
+      console.log("[game_created] ANTHROPIC_API_KEY not set, skipping achievement generation");
+      return e.next();
+    }
 
   const core = require(`${__hooks}/_core.js`);
   const categoryIds = game.get("categories") || [];
@@ -72,25 +73,29 @@ onRecordAfterCreateSuccess((e) => {
   const text = core.extractClaudeText(parsedResponse);
   const achievements = core.parseAchievements(text);
 
-  if (achievements.length === 0) {
-    console.log(`[game_created] No valid achievements parsed for "${game.get("name")}"`);
-    return;
-  }
-
-  const coll = $app.findCollectionByNameOrId("achievements");
-  for (const a of achievements) {
-    const rec = new Record(coll);
-    rec.set("game", game.id);
-    rec.set("title", a.title);
-    rec.set("description", a.description);
-    rec.set("trigger_expr", a.triggerExpr);
-    rec.set("rarity", a.rarity);
-    try {
-      $app.save(rec);
-    } catch (err) {
-      console.log(`[game_created] Could not save achievement "${a.title}": ${err}`);
+    if (achievements.length === 0) {
+      console.log(`[game_created] No valid achievements parsed for "${game.get("name")}"`);
+      return e.next();
     }
-  }
 
-  console.log(`[game_created] Saved ${achievements.length} achievements for "${game.get("name")}"`);
+    const coll = $app.findCollectionByNameOrId("achievements");
+    for (const a of achievements) {
+      const rec = new Record(coll);
+      rec.set("game", game.id);
+      rec.set("title", a.title);
+      rec.set("description", a.description);
+      rec.set("trigger_expr", a.triggerExpr);
+      rec.set("rarity", a.rarity);
+      try {
+        $app.save(rec);
+      } catch (err) {
+        console.log(`[game_created] Could not save achievement "${a.title}": ${err}`);
+      }
+    }
+
+    console.log(`[game_created] Saved ${achievements.length} achievements for "${game.get("name")}"`);
+  } catch (err) {
+    console.log(`[game_created] error: ${err}`);
+  }
+  e.next();
 }, "games");

@@ -5,10 +5,45 @@ migrate(
   (app) => {
     const collections = [
       {
+        "id": "pbc_categories0",
         "name": "categories",
         "type": "base",
         "system": false,
         "fields": [
+          {
+            "id": "text3208210256",
+            "name": "id",
+            "type": "text",
+            "system": true,
+            "required": true,
+            "presentable": false,
+            "primaryKey": true,
+            "hidden": false,
+            "min": 15,
+            "max": 15,
+            "pattern": "^[a-z0-9]+$",
+            "autogeneratePattern": "[a-z0-9]{15}"
+          },
+          {
+            "id": "autodate2990389176",
+            "name": "created",
+            "type": "autodate",
+            "system": true,
+            "hidden": false,
+            "presentable": false,
+            "onCreate": true,
+            "onUpdate": false
+          },
+          {
+            "id": "autodate3332085495",
+            "name": "updated",
+            "type": "autodate",
+            "system": true,
+            "hidden": false,
+            "presentable": false,
+            "onCreate": true,
+            "onUpdate": true
+          },
           {
             "name": "name",
             "type": "text",
@@ -32,7 +67,9 @@ migrate(
             "primaryKey": false
           }
         ],
-        "indexes": [],
+        "indexes": [
+          "CREATE UNIQUE INDEX idx_categories_name ON categories (name)"
+        ],
         "listRule": "",
         "viewRule": "",
         "createRule": null,
@@ -40,10 +77,100 @@ migrate(
         "deleteRule": null
       },
       {
-        "name": "users",
+        "id": "pbc_players0000",
+        "name": "players",
         "type": "auth",
         "system": false,
         "fields": [
+          {
+            "id": "text3208210256",
+            "name": "id",
+            "type": "text",
+            "system": true,
+            "required": true,
+            "presentable": false,
+            "primaryKey": true,
+            "hidden": false,
+            "min": 15,
+            "max": 15,
+            "pattern": "^[a-z0-9]+$",
+            "autogeneratePattern": "[a-z0-9]{15}"
+          },
+          {
+            "id": "password901924565",
+            "name": "password",
+            "type": "password",
+            "system": true,
+            "hidden": true,
+            "required": true,
+            "presentable": false,
+            "min": 4,
+            "max": 71,
+            "pattern": "",
+            "cost": 0
+          },
+          {
+            "id": "text2504183744",
+            "name": "tokenKey",
+            "type": "text",
+            "system": true,
+            "hidden": true,
+            "required": true,
+            "presentable": false,
+            "min": 30,
+            "max": 60,
+            "pattern": "",
+            "autogeneratePattern": "[a-zA-Z0-9_]{50}"
+          },
+          {
+            "id": "email3885137012",
+            "name": "email",
+            "type": "email",
+            "system": true,
+            "hidden": false,
+            "required": false,
+            "presentable": false,
+            "onlyDomains": null,
+            "exceptDomains": null
+          },
+          {
+            "id": "bool1547992806",
+            "name": "emailVisibility",
+            "type": "bool",
+            "system": true,
+            "hidden": false,
+            "required": false,
+            "presentable": false
+          },
+          {
+            "id": "bool256245529",
+            "name": "verified",
+            "type": "bool",
+            "system": true,
+            "hidden": false,
+            "required": false,
+            "presentable": false
+          },
+          {
+            "id": "autodate2990389176",
+            "name": "created",
+            "type": "autodate",
+            "system": true,
+            "hidden": false,
+            "presentable": false,
+            "onCreate": true,
+            "onUpdate": false
+          },
+          {
+            "id": "autodate3332085495",
+            "name": "updated",
+            "type": "autodate",
+            "system": true,
+            "hidden": false,
+            "presentable": false,
+            "onCreate": true,
+            "onUpdate": true
+          },
           {
             "name": "nickname",
             "type": "text",
@@ -58,7 +185,7 @@ migrate(
           {
             "name": "xp",
             "type": "number",
-            "required": true,
+            "required": false,
             "presentable": false,
             "system": false,
             "min": 0,
@@ -78,7 +205,7 @@ migrate(
           {
             "name": "re_rolls",
             "type": "number",
-            "required": true,
+            "required": false,
             "presentable": false,
             "system": false,
             "min": 0,
@@ -91,13 +218,15 @@ migrate(
             "required": false,
             "presentable": false,
             "system": false,
-            "collectionId": "categories",
-            "maxSelect": null,
-            "minSelect": null,
+            "collectionId": "pbc_categories0",
+            "maxSelect": 0,
+            "minSelect": 0,
             "cascadeDelete": false
           }
         ],
-        "indexes": [],
+        "indexes": [
+          "CREATE UNIQUE INDEX idx_players_nickname ON players (nickname)"
+        ],
         "listRule": "",
         "viewRule": "",
         "createRule": null,
@@ -106,21 +235,79 @@ migrate(
         "passwordAuth": {
           "enabled": true,
           "identityFields": [
-            "username"
+            "nickname"
           ]
         },
         "oauth2": {
           "enabled": false,
           "providers": []
         },
+        "mfa": {
+          "enabled": false,
+          "duration": 0,
+          "rule": ""
+        },
+        "otp": {
+          "enabled": false
+        },
         "manageRule": null,
-        "authRule": ""
+        "authRule": "",
+        "authToken": {
+          "duration": 1209600
+        },
+        "passwordResetToken": {
+          "duration": 1800
+        },
+        "emailChangeToken": {
+          "duration": 1800
+        },
+        "verificationToken": {
+          "duration": 259200
+        },
+        "fileToken": {
+          "duration": 180
+        }
       },
       {
+        "id": "pbc_games000000",
         "name": "games",
         "type": "base",
         "system": false,
         "fields": [
+          {
+            "id": "text3208210256",
+            "name": "id",
+            "type": "text",
+            "system": true,
+            "required": true,
+            "presentable": false,
+            "primaryKey": true,
+            "hidden": false,
+            "min": 15,
+            "max": 15,
+            "pattern": "^[a-z0-9]+$",
+            "autogeneratePattern": "[a-z0-9]{15}"
+          },
+          {
+            "id": "autodate2990389176",
+            "name": "created",
+            "type": "autodate",
+            "system": true,
+            "hidden": false,
+            "presentable": false,
+            "onCreate": true,
+            "onUpdate": false
+          },
+          {
+            "id": "autodate3332085495",
+            "name": "updated",
+            "type": "autodate",
+            "system": true,
+            "hidden": false,
+            "presentable": false,
+            "onCreate": true,
+            "onUpdate": true
+          },
           {
             "name": "name",
             "type": "text",
@@ -158,9 +345,9 @@ migrate(
             "required": false,
             "presentable": false,
             "system": false,
-            "collectionId": "categories",
-            "maxSelect": null,
-            "minSelect": null,
+            "collectionId": "pbc_categories0",
+            "maxSelect": 0,
+            "minSelect": 0,
             "cascadeDelete": false
           },
           {
@@ -192,9 +379,9 @@ migrate(
             "required": false,
             "presentable": false,
             "system": false,
-            "collectionId": "users",
-            "maxSelect": null,
-            "minSelect": null,
+            "collectionId": "pbc_players0000",
+            "maxSelect": 0,
+            "minSelect": 0,
             "cascadeDelete": false
           },
           {
@@ -203,13 +390,15 @@ migrate(
             "required": true,
             "presentable": false,
             "system": false,
-            "collectionId": "users",
+            "collectionId": "pbc_players0000",
             "maxSelect": 1,
-            "minSelect": null,
+            "minSelect": 0,
             "cascadeDelete": false
           }
         ],
-        "indexes": [],
+        "indexes": [
+          "CREATE UNIQUE INDEX idx_games_name ON games (name)"
+        ],
         "listRule": "",
         "viewRule": "",
         "createRule": "@request.auth.id != \"\"",
@@ -217,19 +406,54 @@ migrate(
         "deleteRule": "created_by = @request.auth.id"
       },
       {
+        "id": "pbc_achievement",
         "name": "achievements",
         "type": "base",
         "system": false,
         "fields": [
+          {
+            "id": "text3208210256",
+            "name": "id",
+            "type": "text",
+            "system": true,
+            "required": true,
+            "presentable": false,
+            "primaryKey": true,
+            "hidden": false,
+            "min": 15,
+            "max": 15,
+            "pattern": "^[a-z0-9]+$",
+            "autogeneratePattern": "[a-z0-9]{15}"
+          },
+          {
+            "id": "autodate2990389176",
+            "name": "created",
+            "type": "autodate",
+            "system": true,
+            "hidden": false,
+            "presentable": false,
+            "onCreate": true,
+            "onUpdate": false
+          },
+          {
+            "id": "autodate3332085495",
+            "name": "updated",
+            "type": "autodate",
+            "system": true,
+            "hidden": false,
+            "presentable": false,
+            "onCreate": true,
+            "onUpdate": true
+          },
           {
             "name": "game",
             "type": "relation",
             "required": true,
             "presentable": false,
             "system": false,
-            "collectionId": "games",
+            "collectionId": "pbc_games000000",
             "maxSelect": 1,
-            "minSelect": null,
+            "minSelect": 0,
             "cascadeDelete": true
           },
           {
@@ -298,19 +522,54 @@ migrate(
         "deleteRule": null
       },
       {
+        "id": "pbc_sessions000",
         "name": "sessions",
         "type": "base",
         "system": false,
         "fields": [
+          {
+            "id": "text3208210256",
+            "name": "id",
+            "type": "text",
+            "system": true,
+            "required": true,
+            "presentable": false,
+            "primaryKey": true,
+            "hidden": false,
+            "min": 15,
+            "max": 15,
+            "pattern": "^[a-z0-9]+$",
+            "autogeneratePattern": "[a-z0-9]{15}"
+          },
+          {
+            "id": "autodate2990389176",
+            "name": "created",
+            "type": "autodate",
+            "system": true,
+            "hidden": false,
+            "presentable": false,
+            "onCreate": true,
+            "onUpdate": false
+          },
+          {
+            "id": "autodate3332085495",
+            "name": "updated",
+            "type": "autodate",
+            "system": true,
+            "hidden": false,
+            "presentable": false,
+            "onCreate": true,
+            "onUpdate": true
+          },
           {
             "name": "host",
             "type": "relation",
             "required": true,
             "presentable": false,
             "system": false,
-            "collectionId": "users",
+            "collectionId": "pbc_players0000",
             "maxSelect": 1,
-            "minSelect": null,
+            "minSelect": 0,
             "cascadeDelete": false
           },
           {
@@ -319,9 +578,9 @@ migrate(
             "required": false,
             "presentable": false,
             "system": false,
-            "collectionId": "users",
+            "collectionId": "pbc_players0000",
             "maxSelect": 1,
-            "minSelect": null,
+            "minSelect": 0,
             "cascadeDelete": false
           },
           {
@@ -367,7 +626,9 @@ migrate(
             "primaryKey": false
           }
         ],
-        "indexes": [],
+        "indexes": [
+          "CREATE UNIQUE INDEX idx_sessions_qr_token ON sessions (qr_token)"
+        ],
         "listRule": "",
         "viewRule": "",
         "createRule": "@request.auth.id != \"\"",
@@ -375,30 +636,65 @@ migrate(
         "deleteRule": "host = @request.auth.id"
       },
       {
+        "id": "pbc_session_par",
         "name": "session_participants",
         "type": "base",
         "system": false,
         "fields": [
+          {
+            "id": "text3208210256",
+            "name": "id",
+            "type": "text",
+            "system": true,
+            "required": true,
+            "presentable": false,
+            "primaryKey": true,
+            "hidden": false,
+            "min": 15,
+            "max": 15,
+            "pattern": "^[a-z0-9]+$",
+            "autogeneratePattern": "[a-z0-9]{15}"
+          },
+          {
+            "id": "autodate2990389176",
+            "name": "created",
+            "type": "autodate",
+            "system": true,
+            "hidden": false,
+            "presentable": false,
+            "onCreate": true,
+            "onUpdate": false
+          },
+          {
+            "id": "autodate3332085495",
+            "name": "updated",
+            "type": "autodate",
+            "system": true,
+            "hidden": false,
+            "presentable": false,
+            "onCreate": true,
+            "onUpdate": true
+          },
           {
             "name": "session",
             "type": "relation",
             "required": true,
             "presentable": false,
             "system": false,
-            "collectionId": "sessions",
+            "collectionId": "pbc_sessions000",
             "maxSelect": 1,
-            "minSelect": null,
+            "minSelect": 0,
             "cascadeDelete": true
           },
           {
-            "name": "user",
+            "name": "player",
             "type": "relation",
             "required": true,
             "presentable": false,
             "system": false,
-            "collectionId": "users",
+            "collectionId": "pbc_players0000",
             "maxSelect": 1,
-            "minSelect": null,
+            "minSelect": 0,
             "cascadeDelete": false
           },
           {
@@ -436,7 +732,7 @@ migrate(
           }
         ],
         "indexes": [
-          "CREATE UNIQUE INDEX idx_sp_session_user ON session_participants (session, user)"
+          "CREATE UNIQUE INDEX idx_sp_session_player ON session_participants (session, player)"
         ],
         "listRule": "",
         "viewRule": "",
@@ -445,19 +741,54 @@ migrate(
         "deleteRule": null
       },
       {
+        "id": "pbc_matches0000",
         "name": "matches",
         "type": "base",
         "system": false,
         "fields": [
+          {
+            "id": "text3208210256",
+            "name": "id",
+            "type": "text",
+            "system": true,
+            "required": true,
+            "presentable": false,
+            "primaryKey": true,
+            "hidden": false,
+            "min": 15,
+            "max": 15,
+            "pattern": "^[a-z0-9]+$",
+            "autogeneratePattern": "[a-z0-9]{15}"
+          },
+          {
+            "id": "autodate2990389176",
+            "name": "created",
+            "type": "autodate",
+            "system": true,
+            "hidden": false,
+            "presentable": false,
+            "onCreate": true,
+            "onUpdate": false
+          },
+          {
+            "id": "autodate3332085495",
+            "name": "updated",
+            "type": "autodate",
+            "system": true,
+            "hidden": false,
+            "presentable": false,
+            "onCreate": true,
+            "onUpdate": true
+          },
           {
             "name": "session",
             "type": "relation",
             "required": true,
             "presentable": false,
             "system": false,
-            "collectionId": "sessions",
+            "collectionId": "pbc_sessions000",
             "maxSelect": 1,
-            "minSelect": null,
+            "minSelect": 0,
             "cascadeDelete": true
           },
           {
@@ -466,9 +797,9 @@ migrate(
             "required": false,
             "presentable": false,
             "system": false,
-            "collectionId": "games",
+            "collectionId": "pbc_games000000",
             "maxSelect": 1,
-            "minSelect": null,
+            "minSelect": 0,
             "cascadeDelete": false
           },
           {
@@ -528,30 +859,65 @@ migrate(
         "deleteRule": null
       },
       {
+        "id": "pbc_match_playe",
         "name": "match_players",
         "type": "base",
         "system": false,
         "fields": [
+          {
+            "id": "text3208210256",
+            "name": "id",
+            "type": "text",
+            "system": true,
+            "required": true,
+            "presentable": false,
+            "primaryKey": true,
+            "hidden": false,
+            "min": 15,
+            "max": 15,
+            "pattern": "^[a-z0-9]+$",
+            "autogeneratePattern": "[a-z0-9]{15}"
+          },
+          {
+            "id": "autodate2990389176",
+            "name": "created",
+            "type": "autodate",
+            "system": true,
+            "hidden": false,
+            "presentable": false,
+            "onCreate": true,
+            "onUpdate": false
+          },
+          {
+            "id": "autodate3332085495",
+            "name": "updated",
+            "type": "autodate",
+            "system": true,
+            "hidden": false,
+            "presentable": false,
+            "onCreate": true,
+            "onUpdate": true
+          },
           {
             "name": "match",
             "type": "relation",
             "required": true,
             "presentable": false,
             "system": false,
-            "collectionId": "matches",
+            "collectionId": "pbc_matches0000",
             "maxSelect": 1,
-            "minSelect": null,
+            "minSelect": 0,
             "cascadeDelete": true
           },
           {
-            "name": "user",
+            "name": "player",
             "type": "relation",
             "required": true,
             "presentable": false,
             "system": false,
-            "collectionId": "users",
+            "collectionId": "pbc_players0000",
             "maxSelect": 1,
-            "minSelect": null,
+            "minSelect": 0,
             "cascadeDelete": false
           },
           {
@@ -562,15 +928,20 @@ migrate(
             "system": false
           },
           {
-            "name": "liked",
-            "type": "bool",
+            "name": "rating",
+            "type": "select",
             "required": false,
             "presentable": false,
-            "system": false
+            "system": false,
+            "maxSelect": 1,
+            "values": [
+              "like",
+              "dislike"
+            ]
           }
         ],
         "indexes": [
-          "CREATE UNIQUE INDEX idx_mp_match_user ON match_players (match, user)"
+          "CREATE UNIQUE INDEX idx_mp_match_player ON match_players (match, player)"
         ],
         "listRule": "",
         "viewRule": "",
@@ -579,30 +950,65 @@ migrate(
         "deleteRule": null
       },
       {
+        "id": "pbc_votes000000",
         "name": "votes",
         "type": "base",
         "system": false,
         "fields": [
+          {
+            "id": "text3208210256",
+            "name": "id",
+            "type": "text",
+            "system": true,
+            "required": true,
+            "presentable": false,
+            "primaryKey": true,
+            "hidden": false,
+            "min": 15,
+            "max": 15,
+            "pattern": "^[a-z0-9]+$",
+            "autogeneratePattern": "[a-z0-9]{15}"
+          },
+          {
+            "id": "autodate2990389176",
+            "name": "created",
+            "type": "autodate",
+            "system": true,
+            "hidden": false,
+            "presentable": false,
+            "onCreate": true,
+            "onUpdate": false
+          },
+          {
+            "id": "autodate3332085495",
+            "name": "updated",
+            "type": "autodate",
+            "system": true,
+            "hidden": false,
+            "presentable": false,
+            "onCreate": true,
+            "onUpdate": true
+          },
           {
             "name": "match",
             "type": "relation",
             "required": true,
             "presentable": false,
             "system": false,
-            "collectionId": "matches",
+            "collectionId": "pbc_matches0000",
             "maxSelect": 1,
-            "minSelect": null,
+            "minSelect": 0,
             "cascadeDelete": true
           },
           {
-            "name": "user",
+            "name": "player",
             "type": "relation",
             "required": true,
             "presentable": false,
             "system": false,
-            "collectionId": "users",
+            "collectionId": "pbc_players0000",
             "maxSelect": 1,
-            "minSelect": null,
+            "minSelect": 0,
             "cascadeDelete": false
           },
           {
@@ -611,14 +1017,14 @@ migrate(
             "required": false,
             "presentable": false,
             "system": false,
-            "collectionId": "games",
+            "collectionId": "pbc_games000000",
             "maxSelect": 1,
-            "minSelect": null,
+            "minSelect": 0,
             "cascadeDelete": false
           }
         ],
         "indexes": [
-          "CREATE UNIQUE INDEX idx_votes_match_user ON votes (match, user)"
+          "CREATE UNIQUE INDEX idx_votes_match_player ON votes (match, player)"
         ],
         "listRule": "",
         "viewRule": "",
@@ -627,19 +1033,54 @@ migrate(
         "deleteRule": null
       },
       {
-        "name": "user_achievements",
+        "id": "pbc_player_achi",
+        "name": "player_achievements",
         "type": "base",
         "system": false,
         "fields": [
           {
-            "name": "user",
+            "id": "text3208210256",
+            "name": "id",
+            "type": "text",
+            "system": true,
+            "required": true,
+            "presentable": false,
+            "primaryKey": true,
+            "hidden": false,
+            "min": 15,
+            "max": 15,
+            "pattern": "^[a-z0-9]+$",
+            "autogeneratePattern": "[a-z0-9]{15}"
+          },
+          {
+            "id": "autodate2990389176",
+            "name": "created",
+            "type": "autodate",
+            "system": true,
+            "hidden": false,
+            "presentable": false,
+            "onCreate": true,
+            "onUpdate": false
+          },
+          {
+            "id": "autodate3332085495",
+            "name": "updated",
+            "type": "autodate",
+            "system": true,
+            "hidden": false,
+            "presentable": false,
+            "onCreate": true,
+            "onUpdate": true
+          },
+          {
+            "name": "player",
             "type": "relation",
             "required": true,
             "presentable": false,
             "system": false,
-            "collectionId": "users",
+            "collectionId": "pbc_players0000",
             "maxSelect": 1,
-            "minSelect": null,
+            "minSelect": 0,
             "cascadeDelete": true
           },
           {
@@ -648,9 +1089,9 @@ migrate(
             "required": true,
             "presentable": false,
             "system": false,
-            "collectionId": "achievements",
+            "collectionId": "pbc_achievement",
             "maxSelect": 1,
-            "minSelect": null,
+            "minSelect": 0,
             "cascadeDelete": true
           },
           {
@@ -664,7 +1105,7 @@ migrate(
           }
         ],
         "indexes": [
-          "CREATE UNIQUE INDEX idx_ua_user_achievement ON user_achievements (user, achievement)"
+          "CREATE UNIQUE INDEX idx_pa_player_achievement ON player_achievements (player, achievement)"
         ],
         "listRule": "",
         "viewRule": "",
@@ -679,7 +1120,7 @@ migrate(
     }
   },
   (app) => {
-    const names = ["user_achievements","votes","match_players","matches","session_participants","sessions","achievements","games","users","categories"];
+    const names = ["player_achievements","votes","match_players","matches","session_participants","sessions","achievements","games","players","categories"];
     for (const name of names) {
       try {
         const collection = app.findCollectionByNameOrId(name);

@@ -249,7 +249,7 @@ function computeMatchAwards(outcome, statsByUser, achievementsForGame, alreadyUn
     if (player.won) {
       lines.push({ action: "win_match", xp: xpForAction("win_match") });
     }
-    if (player.liked === true || player.liked === false) {
+    if (player.rating === "like" || player.rating === "dislike") {
       lines.push({ action: "rate_game", xp: xpForAction("rate_game") });
     }
     const prev = statsByUser[player.userId] ?? emptyStats(player.userId);

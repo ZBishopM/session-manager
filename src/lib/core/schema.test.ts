@@ -14,7 +14,7 @@ describe("canonical COLLECTIONS schema", () => {
   it("contains every collection referenced in the architecture doc", () => {
     const expected = [
       "categories",
-      "users",
+      "players",
       "games",
       "achievements",
       "sessions",
@@ -22,7 +22,7 @@ describe("canonical COLLECTIONS schema", () => {
       "matches",
       "match_players",
       "votes",
-      "user_achievements",
+      "player_achievements",
     ];
     const actual = COLLECTIONS.map((c) => c.name);
     expect(actual).toEqual(expect.arrayContaining(expected));
@@ -31,21 +31,20 @@ describe("canonical COLLECTIONS schema", () => {
   it("defines exactly one auth collection (users)", () => {
     const authCollections = COLLECTIONS.filter((c) => c.type === "auth");
     expect(authCollections).toHaveLength(1);
-    expect(authCollections[0]!.name).toBe("users");
+    expect(authCollections[0]!.name).toBe("players");
   });
 
   it("users auth collection has nickname as unique identity field", () => {
-    const users = COLLECTIONS.find((c) => c.name === "users")!;
+    const users = COLLECTIONS.find((c) => c.name === "players")!;
     const nickname = users.fields.find((f) => f.name === "nickname")!;
     expect(nickname.unique).toBe(true);
     expect(nickname.required).toBe(true);
     expect(nickname.type).toBe("text");
   });
 
-  it("AUTH_OPTIONS enables 4-digit passcode auth via username", () => {
+  it("AUTH_OPTIONS enables 4-digit passcode auth via the nickname identity", () => {
     expect(AUTH_OPTIONS.minPasswordLength).toBe(4);
-    expect(AUTH_OPTIONS.allowUsernameAuth).toBe(true);
-    expect(AUTH_OPTIONS.allowEmailAuth).toBe(false);
+    expect(AUTH_OPTIONS.identityFields).toContain("nickname");
   });
 
   it("every collection that stores mutations restricts write rules", () => {
@@ -64,8 +63,8 @@ describe("canonical COLLECTIONS schema", () => {
       ["match_players", "match"],
       ["votes", "match"],
       ["achievements", "game"],
-      ["user_achievements", "user"],
-      ["user_achievements", "achievement"],
+      ["player_achievements", "player"],
+      ["player_achievements", "achievement"],
     ];
     for (const [collName, fieldName] of shouldCascade) {
       const coll = COLLECTIONS.find((c) => c.name === collName)!;

@@ -64,12 +64,14 @@ describe("computeMatchAwards — XP", () => {
     );
   });
 
-  it("awards rate_game when liked is set (either 👍 or 👎)", () => {
+  it("awards rate_game when rating is set (either like or dislike)", () => {
     const r = computeMatchAwards(
       withPlayers([
-        { userId: "u1", won: false, liked: true },
-        { userId: "u2", won: false, liked: false },
-        { userId: "u3", won: false, liked: null },
+        { userId: "u1", won: false, rating: "like" },
+        { userId: "u2", won: false, rating: "dislike" },
+        { userId: "u3", won: false, rating: null },
+        { userId: "u4", won: false, rating: "" },
+        { userId: "u5", won: false },
       ]),
       {},
       [],
@@ -80,6 +82,8 @@ describe("computeMatchAwards — XP", () => {
     expect(count("u1")).toBe(1);
     expect(count("u2")).toBe(1);
     expect(count("u3")).toBe(0);
+    expect(count("u4")).toBe(0);
+    expect(count("u5")).toBe(0);
   });
 
   it("supports team wins: multiple players can have won=true", () => {
@@ -242,7 +246,7 @@ describe("computeMatchAwards — edge cases", () => {
 
   it("xpDelta equals the sum of xpBreakdown entries", () => {
     const r = computeMatchAwards(
-      withPlayers([{ userId: "u1", won: true, liked: true }]),
+      withPlayers([{ userId: "u1", won: true, rating: "like" }]),
       { u1: { ...emptyStats("u1"), winsOnGame: 4 } },
       [
         {
