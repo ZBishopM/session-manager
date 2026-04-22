@@ -25,3 +25,6 @@ jobs:
 
       - name: Unit tests
         run: npm test
+
+      - name: Migrations are up to date with manifest
+        run: npm run check:migrations
