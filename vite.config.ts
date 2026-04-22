@@ -1,9 +1,12 @@
 /// <reference types="vitest" />
 import { sveltekit } from "@sveltejs/kit/vite";
+import tailwindcss from "@tailwindcss/vite";
+import { SvelteKitPWA } from "@vite-pwa/sveltekit";
 import { defineConfig } from "vite";
+import { PWA_OPTIONS } from "./src/lib/pwa-config.js";
 
 export default defineConfig({
-  plugins: [sveltekit()],
+  plugins: [tailwindcss(), sveltekit(), SvelteKitPWA(PWA_OPTIONS)],
   test: {
     include: ["src/**/*.test.ts", "scripts/**/*.test.ts"],
     environment: "jsdom",
