@@ -1,3 +1,4 @@
+export * from "./achievement-generator.js";
 export * from "./achievements.js";
 export * from "./awards.js";
 export * from "./passcode.js";

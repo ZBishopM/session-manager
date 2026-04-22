@@ -24,11 +24,16 @@ var __publicField = (obj, key, value) => __defNormalProp(obj, typeof key !== "sy
 // src/lib/core/hooks-entry.ts
 var hooks_entry_exports = {};
 __export(hooks_entry_exports, {
+  ACHIEVEMENTS_MODEL_DEFAULT: () => ACHIEVEMENTS_MODEL_DEFAULT,
   RANDOM_VOTE: () => RANDOM_VOTE,
+  buildClaudeRequest: () => buildClaudeRequest,
+  buildPrompt: () => buildPrompt,
   computeMatchAwards: () => computeMatchAwards,
   emptyStats: () => emptyStats,
   evaluateTrigger: () => evaluateTrigger,
+  extractClaudeText: () => extractClaudeText,
   levelFromXp: () => levelFromXp,
+  parseAchievements: () => parseAchievements,
   progressToNextLevel: () => progressToNextLevel,
   resolveVotes: () => resolveVotes,
   xpForAction: () => xpForAction
@@ -279,6 +284,154 @@ function advanceStats(prev, won, durationSeconds) {
     match_duration_seconds: durationSeconds,
     match_duration_minutes: durationSeconds / 60
   };
+}
+
+// src/lib/core/achievement-generator.ts
+var ACHIEVEMENTS_MODEL_DEFAULT = "claude-haiku-4-5";
+var MAX_TOKENS = 2048;
+var MAX_ACHIEVEMENTS = 10;
+var SYSTEM_PROMPT = `You generate personalized board-game achievements.
+
+Output strict JSON: an array of 6 objects, each with:
+  - "title": string, 1-80 chars, punchy and game-flavored
+  - "description": string, 1-300 chars, include a pun or in-joke about the game
+  - "triggerExpr": a safe expression using only these variables:
+      total_wins, wins_on_game, losses_on_game,
+      current_streak_wins, current_streak_losses,
+      match_duration_seconds, match_duration_minutes
+    and these operators: >=, <=, >, <, ==, !=, &&, ||, ( )
+    No function calls, no property access, no string literals.
+  - "rarity": one of "common", "rare", "epic"
+
+Cover these buckets across the 6 outputs:
+  1. First win (common)
+  2. Five wins on this game (common)
+  3. Twenty-five wins (rare)
+  4. First loss, with a consoling pun (common)
+  5. A win streak (>= 3) (rare)
+  6. An edge case specific to the game (epic) \u2014 e.g. a very long match
+     (match_duration_minutes >= <reasonable-for-this-game>) or a
+     loyal-loser combo (losses_on_game >= 10 && wins_on_game == 0).
+
+Return ONLY the JSON array. No prose, no markdown.`;
+function buildPrompt(game) {
+  const cats = game.categories?.length ? `Categories: ${game.categories.join(", ")}.` : "Categories: unspecified.";
+  const desc = game.description?.trim() ? `Description: ${game.description.trim()}` : "";
+  const user = [
+    `Game: ${game.name}`,
+    `Players: ${game.minPlayers}-${game.maxPlayers}`,
+    cats,
+    desc
+  ].filter(Boolean).join("\n");
+  return { system: SYSTEM_PROMPT, user };
+}
+function buildClaudeRequest(prompt, opts = {}) {
+  const body = {
+    model: opts.model ?? ACHIEVEMENTS_MODEL_DEFAULT,
+    max_tokens: opts.maxTokens ?? MAX_TOKENS,
+    system: [
+      {
+        type: "text",
+        text: prompt.system,
+        cache_control: { type: "ephemeral" }
+      }
+    ],
+    messages: [{ role: "user", content: prompt.user }]
+  };
+  return JSON.stringify(body);
+}
+function extractClaudeText(response) {
+  if (!response || typeof response !== "object") return "";
+  const content = response.content;
+  if (!Array.isArray(content)) return "";
+  for (const block of content) {
+    if (block && typeof block === "object" && block.type === "text" && typeof block.text === "string") {
+      return block.text;
+    }
+  }
+  return "";
+}
+var RARITIES = /* @__PURE__ */ new Set(["common", "rare", "epic"]);
+var LIMITS = {
+  title: { min: 1, max: 80 },
+  description: { min: 1, max: 300 },
+  triggerExpr: { min: 1, max: 500 }
+};
+function parseAchievements(raw) {
+  const json = stripFence(raw);
+  let parsed;
+  try {
+    parsed = JSON.parse(json);
+  } catch {
+    return [];
+  }
+  if (!Array.isArray(parsed)) return [];
+  const out = [];
+  const seen = /* @__PURE__ */ new Set();
+  for (const item of parsed) {
+    if (out.length >= MAX_ACHIEVEMENTS) break;
+    const normalized = normalizeAchievement(item);
+    if (!normalized) continue;
+    if (seen.has(normalized.triggerExpr)) continue;
+    seen.add(normalized.triggerExpr);
+    out.push(normalized);
+  }
+  return out;
+}
+function stripFence(raw) {
+  const trimmed = raw.trim();
+  const match = trimmed.match(/```(?:json)?\s*([\s\S]*?)```/);
+  if (match && match[1]) return match[1].trim();
+  return trimmed;
+}
+function normalizeAchievement(item) {
+  if (!item || typeof item !== "object") return null;
+  const obj = item;
+  const title = asString(obj.title, LIMITS.title.min, LIMITS.title.max);
+  const description = asString(
+    obj.description,
+    LIMITS.description.min,
+    LIMITS.description.max
+  );
+  const triggerExpr = asString(
+    obj.triggerExpr,
+    LIMITS.triggerExpr.min,
+    LIMITS.triggerExpr.max
+  );
+  const rarity = typeof obj.rarity === "string" ? obj.rarity : "";
+  if (!title || !description || !triggerExpr || !RARITIES.has(rarity)) {
+    return null;
+  }
+  if (!exprParses(triggerExpr)) return null;
+  return {
+    title,
+    description,
+    triggerExpr,
+    rarity
+  };
+}
+function asString(v, min, max) {
+  if (typeof v !== "string") return null;
+  const s = v.trim();
+  if (s.length < min || s.length > max) return null;
+  return s;
+}
+function exprParses(expr) {
+  const huge = {
+    total_wins: 1e9,
+    wins_on_game: 1e9,
+    losses_on_game: 1e9,
+    current_streak_wins: 1e9,
+    current_streak_losses: 1e9,
+    match_duration_seconds: 1e9,
+    match_duration_minutes: 1e9
+  };
+  const zero = Object.fromEntries(
+    Object.keys(huge).map((k) => [k, 0])
+  );
+  const a = evaluateTrigger(expr, huge);
+  const b = evaluateTrigger(expr, zero);
+  return a || b;
 }
 
 // src/lib/core/voting.ts

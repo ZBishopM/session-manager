@@ -8,5 +8,12 @@
 
 export { computeMatchAwards, emptyStats } from "./awards.js";
 export { evaluateTrigger } from "./achievements.js";
+export {
+  ACHIEVEMENTS_MODEL_DEFAULT,
+  buildClaudeRequest,
+  buildPrompt,
+  extractClaudeText,
+  parseAchievements,
+} from "./achievement-generator.js";
 export { resolveVotes, RANDOM_VOTE } from "./voting.js";
 export { levelFromXp, progressToNextLevel, xpForAction } from "./xp.js";
