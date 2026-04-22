@@ -23,8 +23,14 @@ jobs:
       - name: Type-check
         run: npm run typecheck
 
+      - name: Svelte check
+        run: npm run check
+
       - name: Unit tests
         run: npm test
+
+      - name: Build frontend (adapter-static)
+        run: npm run build
 
       - name: Migrations are up to date with manifest
         run: npm run check:migrations
