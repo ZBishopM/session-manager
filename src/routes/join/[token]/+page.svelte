@@ -17,11 +17,12 @@
     error = null;
     try {
       const filter = `qr_token = "${token.replaceAll('"', "")}"`;
-      session = await collection("sessions").getFirstListItem(filter);
+      const found = await collection("sessions").getFirstListItem(filter);
       const list = await collection("session_participants").getList(1, 1, {
-        filter: `session = "${session.id}"`,
+        filter: `session = "${found.id}"`,
         skipTotal: false,
       });
+      session = found;
       participantCount = list.totalItems;
     } catch (err) {
       session = null;
