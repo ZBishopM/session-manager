@@ -1,0 +1,22 @@
+{
+  "name": "session-manager",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "description": "Mobile-first web app for managing board game sessions in physical meetups",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
+    "typecheck": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^20.11.0",
+    "@vitest/coverage-v8": "^1.6.0",
+    "typescript": "^5.4.0",
+    "vitest": "^1.6.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}
