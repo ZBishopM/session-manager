@@ -229,7 +229,7 @@ migrate(
         ],
         "listRule": "",
         "viewRule": "",
-        "createRule": null,
+        "createRule": "",
         "updateRule": "id = @request.auth.id",
         "deleteRule": null,
         "passwordAuth": {

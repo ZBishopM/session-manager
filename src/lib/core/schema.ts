@@ -107,7 +107,9 @@ export const COLLECTIONS: readonly CollectionDef[] = [
     ],
     listRule: "",
     viewRule: "",
-    createRule: null,
+    // Open signup: anyone can create a player. Once authenticated, players
+    // can only update their own record and never delete it via the API.
+    createRule: "",
     updateRule: "id = @request.auth.id",
     deleteRule: null,
   },
