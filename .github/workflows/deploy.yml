@@ -1,0 +1,57 @@
+name: Deploy
+
+# Runs after CI passes on main, or on manual dispatch. The job is a
+# no-op (skipped) unless the repository defines a DEPLOY_HOST variable
+# and an SSH_KEY secret, so a freshly-cloned repo without VPS setup
+# never red-fails on this workflow.
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    branches: [main]
+    types: [completed]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Push to VPS
+    runs-on: ubuntu-latest
+    if: |
+      (github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success')
+      && vars.DEPLOY_HOST != ''
+    environment: production
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          # workflow_run runs on the default branch by default; pull the
+          # commit that actually triggered CI to deploy the same code.
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "20"
+          cache: npm
+
+      - name: Install deps
+        run: npm ci
+
+      - name: Configure SSH agent
+        uses: webfactory/ssh-agent@v0.9.1
+        with:
+          ssh-private-key: ${{ secrets.SSH_KEY }}
+
+      - name: Trust VPS host key
+        run: |
+          mkdir -p ~/.ssh
+          ssh-keyscan -H "${{ vars.DEPLOY_HOST }}" >> ~/.ssh/known_hosts
+
+      - name: Deploy
+        env:
+          VPS_HOST: ${{ vars.DEPLOY_HOST }}
+          VPS_USER: ${{ vars.DEPLOY_USER }}
+          VPS_APP_DIR: ${{ vars.DEPLOY_APP_DIR }}
+        run: bash scripts/deploy.sh

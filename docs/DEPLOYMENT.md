@@ -179,8 +179,17 @@ jobs:
 
 **Secrets necesarios en GitHub:**
 - `SSH_KEY` — clave privada ED25519 dedicada a despliegues.
-- `VPS_HOST` — IP o dominio.
 - `ANTHROPIC_API_KEY` — se inyecta al crear el `.env` del servidor (no al repo).
+
+**Variables de repo necesarias (Settings → Secrets and variables → Actions → Variables):**
+- `DEPLOY_HOST` — IP o dominio del VPS (sin esto, el workflow se salta limpio).
+- `DEPLOY_USER` (opcional) — usuario SSH, default `sessionmgr`.
+- `DEPLOY_APP_DIR` (opcional) — ruta remota, default `/home/sessionmgr/app`.
+
+El workflow `deploy.yml` se dispara cuando CI termina verde sobre `main`,
+o manualmente desde la pestaña Actions. Mientras `DEPLOY_HOST` esté
+vacío, el job se salta — útil para clonar el repo y no romper Actions
+hasta que tengas VPS aprovisionado.
 
 El usuario `sessionmgr` necesita una línea en `sudoers.d/deploy`:
 
