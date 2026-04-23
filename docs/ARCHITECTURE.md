@@ -12,20 +12,20 @@
 
 ```
 ┌─────────────────────────────────────────────────────────┐
-│  Cliente: SvelteKit + Tailwind + PWA (instalable)       │
-│  Build estático servido por Caddy. Zero Node en prod.   │
+│  Cliente: SvelteKit + Tailwind 4 + PWA (instalable)     │
+│  Build estático servido por Nginx. Zero Node en prod.   │
 └────────────────────┬────────────────────────────────────┘
-                     │ HTTPS + WebSocket (realtime)
+                     │ HTTPS + SSE (realtime)
 ┌────────────────────▼────────────────────────────────────┐
-│  Caddy 2                                                │
-│  - TLS automático (Let's Encrypt)                       │
-│  - Sirve /app/* estáticos                               │
-│  - Proxy a PocketBase en /api/* y /_/                   │
+│  Nginx + Certbot (Let's Encrypt)                        │
+│  - Sirve /home/ubuntu/session-manager/frontend/         │
+│  - Proxy a 127.0.0.1:8090 en /api/* y /_/               │
+│  - proxy_buffering off para SSE realtime                │
 └────────────────────┬────────────────────────────────────┘
                      │
 ┌────────────────────▼────────────────────────────────────┐
-│  PocketBase (binario Go ~30 MB)                         │
-│  - Auth (passcode hash Argon2id)                        │
+│  PocketBase v0.37.3 bajo PM2                            │
+│  - Auth (passcode bcrypt vía PB)                        │
 │  - SQLite con WAL                                       │
 │  - REST + Realtime (SSE)                                │
 │  - File storage local (imágenes de juegos)              │
@@ -33,26 +33,28 @@
 └────────────────────┬────────────────────────────────────┘
                      │ solo al crear un juego nuevo
                      ▼
-            ┌──────────────────┐
-            │  Claude API      │
-            │  claude-haiku-4-5│
-            │  (genera logros) │
-            └──────────────────┘
+        ┌────────────────────────┐
+        │  Google Gemini API     │
+        │  gemini-2.5-flash      │
+        │  (genera 6 logros)     │
+        └────────────────────────┘
 ```
 
-### Presupuesto de RAM en VPS de 1 GB
+### Presupuesto de RAM en Lightsail 1 GB + 2 GB swap
 
 | Componente | RAM aprox. |
 |---|---|
-| Kernel + systemd + SSH + resto | ~120 MB |
-| Caddy | ~30 MB |
+| Kernel + systemd + SSH + agentes Lightsail | ~150 MB |
+| Nginx | ~25 MB |
+| PM2 daemon (compartido con Art Chat / Piles) | ~50 MB |
 | PocketBase (idle) | ~40 MB |
-| PocketBase (pico realtime 20 clientes) | ~90 MB |
+| PocketBase (pico realtime ~20 clientes) | ~90 MB |
 | Buffer SQLite + file cache Linux | ~200 MB |
-| **Total en pico** | **~440 MB** |
-| **Libre para crecer / swap / sorpresas** | **~560 MB** |
+| **Total en pico** | **~555 MB** |
+| **Libre en RAM para otros servicios** | **~445 MB** |
+| **Swap configurado (2 GB)** | absorbe picos build/IA |
 
-Holgura suficiente incluso con picos. Sin Docker (ahorra ~80 MB del daemon).
+`vm.swappiness=10` mantiene SQLite en RAM y solo paginiza presión real. Sin Docker (ahorra ~80 MB del daemon).
 
 ## Decisiones clave (ADR-lite)
 
@@ -102,17 +104,17 @@ Menos que WebSockets full-duplex, pero todo lo que necesitamos es push server→
 
 ### ADR-4: IA de logros → llamada server-side bajo demanda, cacheada en DB
 
-**No se llama a la API desde el cliente** (expondría la key). Se hace desde un *hook* de PocketBase (`onModelAfterCreate` sobre la colección `games`) que:
+**No se llama a la API desde el cliente** (expondría la key). Se hace desde un *hook* de PocketBase (`onRecordAfterCreateSuccess` sobre la colección `games`) que:
 1. Construye el prompt con los campos del juego.
-2. Llama a Claude con `claude-haiku-4-5` (barato, rápido).
-3. Parsea JSON, inserta filas en `achievements`.
-4. Si falla, reintenta en background; el juego queda usable sin logros hasta que se regenere.
+2. Llama a Gemini `gemini-2.5-flash` (barato, rápido, free tier generoso).
+3. Parsea JSON con `responseMimeType: "application/json"` para forzar formato.
+4. Inserta filas en `achievements`. Si falla, el juego queda usable sin logros hasta que se regenere.
 
-**Prompt caching** sobre el system prompt (~800 tokens de instrucciones + ejemplos). Cada juego nuevo paga solo los tokens variables → coste marginal <$0.001 por juego.
+Originalmente el plan era Claude Haiku con prompt caching. Se migró a Gemini Flash 2.5 en abril 2026 por simplicidad de billing y free tier — el contrato del módulo (`buildPrompt` / `buildXRequest` / `extractXText` / `parseAchievements`) sigue siendo el mismo, solo cambiaron las dos funciones que hablan con la API. El commit `2be0e1c` tiene el patrón Anthropic si alguien quiere volver atrás.
 
-### ADR-5: Sin Docker
+### ADR-5: Sin Docker, gestionado por PM2
 
-**Razón:** en 1 GB RAM, el daemon de Docker + overhead por contenedor supone ~80-120 MB que preferimos para la app. Desplegamos binarios nativos con **systemd**. El trade-off de portabilidad no aplica: solo hay un entorno (este VPS).
+**Razón:** en 1 GB RAM, el daemon de Docker + overhead por contenedor supone ~80-120 MB que preferimos para la app. Desplegamos binarios nativos. PM2 ya está corriendo en el VPS para otros servicios (Art Chat, Piles), así que reusarlo evita meter `systemd unit` aparte. PM2 da arranque al boot, restart automático y logs centralizados.
 
 Si el proyecto crece y pasa a 2+ VPS o Kubernetes, migrar a contenedores es trivial (PocketBase ya tiene imagen oficial).
 

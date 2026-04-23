@@ -10,9 +10,9 @@ export { computeMatchAwards, emptyStats } from "./awards.js";
 export { evaluateTrigger } from "./achievements.js";
 export {
   ACHIEVEMENTS_MODEL_DEFAULT,
-  buildClaudeRequest,
+  buildGeminiRequest,
   buildPrompt,
-  extractClaudeText,
+  extractGeminiText,
   parseAchievements,
 } from "./achievement-generator.js";
 export { resolveVotes, RANDOM_VOTE } from "./voting.js";

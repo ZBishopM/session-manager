@@ -26,12 +26,12 @@ var hooks_entry_exports = {};
 __export(hooks_entry_exports, {
   ACHIEVEMENTS_MODEL_DEFAULT: () => ACHIEVEMENTS_MODEL_DEFAULT,
   RANDOM_VOTE: () => RANDOM_VOTE,
-  buildClaudeRequest: () => buildClaudeRequest,
+  buildGeminiRequest: () => buildGeminiRequest,
   buildPrompt: () => buildPrompt,
   computeMatchAwards: () => computeMatchAwards,
   emptyStats: () => emptyStats,
   evaluateTrigger: () => evaluateTrigger,
-  extractClaudeText: () => extractClaudeText,
+  extractGeminiText: () => extractGeminiText,
   levelFromXp: () => levelFromXp,
   parseAchievements: () => parseAchievements,
   progressToNextLevel: () => progressToNextLevel,
@@ -287,7 +287,7 @@ function advanceStats(prev, won, durationSeconds) {
 }
 
 // src/lib/core/achievement-generator.ts
-var ACHIEVEMENTS_MODEL_DEFAULT = "claude-haiku-4-5";
+var ACHIEVEMENTS_MODEL_DEFAULT = "gemini-2.5-flash";
 var MAX_TOKENS = 2048;
 var MAX_ACHIEVEMENTS = 10;
 var SYSTEM_PROMPT = `You generate personalized board-game achievements.
@@ -325,31 +325,28 @@ function buildPrompt(game) {
   ].filter(Boolean).join("\n");
   return { system: SYSTEM_PROMPT, user };
 }
-function buildClaudeRequest(prompt, opts = {}) {
+function buildGeminiRequest(prompt, opts = {}) {
   const body = {
-    model: opts.model ?? ACHIEVEMENTS_MODEL_DEFAULT,
-    max_tokens: opts.maxTokens ?? MAX_TOKENS,
-    system: [
-      {
-        type: "text",
-        text: prompt.system,
-        cache_control: { type: "ephemeral" }
-      }
+    systemInstruction: {
+      parts: [{ text: prompt.system }]
+    },
+    contents: [
+      { parts: [{ text: prompt.user }] }
     ],
-    messages: [{ role: "user", content: prompt.user }]
+    generationConfig: {
+      maxOutputTokens: opts.maxTokens ?? MAX_TOKENS,
+      responseMimeType: "application/json"
+    }
   };
   return JSON.stringify(body);
 }
-function extractClaudeText(response) {
+function extractGeminiText(response) {
   if (!response || typeof response !== "object") return "";
-  const content = response.content;
-  if (!Array.isArray(content)) return "";
-  for (const block of content) {
-    if (block && typeof block === "object" && block.type === "text" && typeof block.text === "string") {
-      return block.text;
-    }
-  }
-  return "";
+  const candidates = response.candidates;
+  if (!Array.isArray(candidates) || candidates.length === 0) return "";
+  const parts = candidates[0]?.content?.parts;
+  if (!Array.isArray(parts) || parts.length === 0) return "";
+  return parts[0]?.text || "";
 }
 var RARITIES = /* @__PURE__ */ new Set(["common", "rare", "epic"]);
 var LIMITS = {

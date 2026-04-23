@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   ACHIEVEMENTS_MODEL_DEFAULT,
-  buildClaudeRequest,
+  buildGeminiRequest,
   buildPrompt,
-  extractClaudeText,
+  extractGeminiText,
   parseAchievements,
   type GameInfo,
 } from "./achievement-generator.js";
@@ -55,65 +55,46 @@ describe("buildPrompt", () => {
   });
 });
 
-describe("buildClaudeRequest", () => {
-  it("produces a well-formed Messages API body by default", () => {
-    const body = buildClaudeRequest(buildPrompt(catan));
+describe("buildGeminiRequest", () => {
+  it("produces a well-formed Gemini API body by default", () => {
+    const body = buildGeminiRequest(buildPrompt(catan));
     const parsed = JSON.parse(body) as Record<string, unknown>;
-    expect(parsed.model).toBe(ACHIEVEMENTS_MODEL_DEFAULT);
-    expect(Array.isArray(parsed.system)).toBe(true);
-    expect(Array.isArray(parsed.messages)).toBe(true);
-    expect((parsed.messages as unknown[]).length).toBe(1);
+    expect(parsed.systemInstruction).toBeDefined();
+    expect(Array.isArray(parsed.contents)).toBe(true);
+    expect((parsed.contents as unknown[]).length).toBe(1);
+    expect(parsed.generationConfig).toBeDefined();
   });
 
-  it("enables prompt caching on the system prompt (cost optimization)", () => {
-    const body = buildClaudeRequest(buildPrompt(catan));
-    const parsed = JSON.parse(body) as {
-      system: Array<{ type: string; cache_control?: { type: string } }>;
-    };
-    expect(Array.isArray(parsed.system)).toBe(true);
-    const cached = parsed.system.some((blk) => blk.cache_control?.type === "ephemeral");
-    expect(cached).toBe(true);
-  });
-
-  it("allows model override", () => {
-    const body = buildClaudeRequest(buildPrompt(catan), { model: "claude-opus-4-7" });
-    expect(JSON.parse(body).model).toBe("claude-opus-4-7");
-  });
-
-  it("caps max_tokens to something reasonable", () => {
-    const body = buildClaudeRequest(buildPrompt(catan));
+  it("caps maxOutputTokens to something reasonable", () => {
+    const body = buildGeminiRequest(buildPrompt(catan));
     const parsed = JSON.parse(body);
-    expect(parsed.max_tokens).toBeGreaterThan(500);
-    expect(parsed.max_tokens).toBeLessThanOrEqual(4096);
+    expect(parsed.generationConfig.maxOutputTokens).toBeGreaterThan(500);
+    expect(parsed.generationConfig.maxOutputTokens).toBeLessThanOrEqual(4096);
   });
 });
 
-describe("extractClaudeText", () => {
+describe("extractGeminiText", () => {
   it("reads the first text content block", () => {
     const res = {
-      content: [{ type: "text", text: "hello" }],
+      candidates: [
+        {
+          content: {
+            parts: [{ text: "hello" }]
+          }
+        }
+      ]
     };
-    expect(extractClaudeText(res)).toBe("hello");
-  });
-
-  it("skips non-text blocks", () => {
-    const res = {
-      content: [
-        { type: "tool_use", id: "x" },
-        { type: "text", text: "found it" },
-      ],
-    };
-    expect(extractClaudeText(res)).toBe("found it");
+    expect(extractGeminiText(res)).toBe("hello");
   });
 
   it("returns empty string if no text block present", () => {
-    expect(extractClaudeText({ content: [] })).toBe("");
-    expect(extractClaudeText({})).toBe("");
+    expect(extractGeminiText({ candidates: [] })).toBe("");
+    expect(extractGeminiText({})).toBe("");
   });
 
   it("is robust to unexpected shapes", () => {
-    expect(extractClaudeText(null)).toBe("");
-    expect(extractClaudeText("not an object")).toBe("");
+    expect(extractGeminiText(null)).toBe("");
+    expect(extractGeminiText("not an object")).toBe("");
   });
 });
 

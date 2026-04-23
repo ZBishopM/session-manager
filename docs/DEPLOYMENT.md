@@ -1,262 +1,310 @@
 # Despliegue y operación
 
-## Método de hosting preferido
+Stack en producción: **AWS Lightsail Ubuntu 1 GB RAM + 2 GB swap**, sin Docker, gestionado por **PM2** y expuesto vía **Nginx** con TLS de Let's Encrypt. La base de datos es SQLite embebida en PocketBase.
 
-**Un único VPS Linux de 1 GB RAM** con stack nativo (sin Docker), gestionado por `systemd` y expuesto por `Caddy`. Despliegue desde GitHub Actions por SSH.
+---
 
-### Proveedor recomendado
+## 1. Crear la instancia en Lightsail (una sola vez)
 
-| Proveedor | Plan | Precio | Notas |
-|---|---|---|---|
-| **Hetzner** | CX22 (2 vCPU, 4 GB) | ~€4/mes | **Mejor relación calidad/precio.** Aunque pide más de 1 GB, es lo mínimo actual; si hay que ceñirse a 1 GB exacto, CX11 ya no existe y la alternativa es Contabo/Netcup. |
-| **Contabo** | VPS S | ~€4/mes | 4 GB RAM, pero sobresuscrito — CPU inconsistente. Suficiente aquí. |
-| **DigitalOcean** | Basic 1 GB | $6/mes | Más caro, mejor red, buena UX si vienes nuevo. |
-| **Oracle Cloud Free Tier** | ARM Ampere 1 GB | €0 | Gratis indefinido, ideal para probar. Pide tarjeta pero no cobra. |
+1. Consola Lightsail → **Create instance**.
+2. **Region:** la más cercana a tus jugadores.
+3. **Platform:** Linux/Unix · **Blueprint:** OS Only · **Ubuntu 22.04 LTS** (o 24.04).
+4. **Plan:** 1 GB RAM · 2 vCPU · 40 GB SSD (~$5/mes).
+5. **Identify your instance:** `session-manager` (o lo que prefieras).
+6. Tras crearla:
+   - **Networking → Public IPv4 → Attach static IP** (gratis si está adjunta a la instancia, ~$3/mes si la dejas suelta).
+   - **Networking → IPv4 Firewall** → añadir reglas para puertos `80/tcp` y `443/tcp`. SSH (22) viene por defecto. **Estos puertos se abren en la consola de Lightsail, no solo en `ufw`** — son dos firewalls independientes y ambos deben permitir el tráfico.
 
-**Elección:** Hetzner si el presupuesto lo permite (CPU dedicada, red excelente, datacenter EU). Oracle Free Tier para empezar sin gastar.
+---
 
-### Por qué un solo VPS y no alternativas
+## 2. Configurar 2 GB de swap en la VPS
 
-| Opción | Descartada porque |
-|---|---|
-| **Vercel/Netlify + DB externa** | Vercel es gratis para frontend, pero la DB externa (Supabase/Neon) añade latencia y vendor lock-in. El realtime de Supabase en plan free es limitado. Pierdes el control que sí tenemos en un VPS. |
-| **Fly.io** | Machines de 256 MB son tentadoras, pero Fly cobra por IOPS y el volumen persistente es complejo. Para SQLite necesitas volumes sticky, y el pricing se dispara con varios. |
-| **Render/Railway** | Simples pero caros a medio plazo (~$20+/mes con DB). |
-| **Kubernetes** | Absurdo para este tráfico. Overhead de control plane > la app entera. |
-| **Serverless (Lambda + DynamoDB)** | PocketBase no encaja; reescribir todo a Lambdas dobla el tiempo a MVP. |
-
-**Un VPS gana** en: coste fijo predecible, control total, SQLite local (latencia <1 ms), simplicidad operativa.
-
-## Preparación del VPS (una vez)
+1 GB de RAM es justo. Con 2 GB de swap, picos puntuales (build, IA, restart) se absorben sin OOM-killer.
 
 ```bash
-# Como root en un Ubuntu 24.04 LTS fresco:
-apt update && apt upgrade -y
-apt install -y ufw fail2ban caddy rclone
-ufw default deny incoming
-ufw allow 22,80,443/tcp
-ufw enable
+# Conéctate por SSH (Lightsail provee llave .pem o tu CLI):
+ssh -i lightsail-key.pem ubuntu@TU-IP-PUBLICA
 
-# Usuario dedicado sin privilegios
-useradd -m -s /bin/bash sessionmgr
-mkdir -p /home/sessionmgr/{app,pb_data,backups}
-chown -R sessionmgr:sessionmgr /home/sessionmgr
+# Crear archivo swap de 2 GB
+sudo fallocate -l 2G /swapfile
+sudo chmod 600 /swapfile
+sudo mkswap /swapfile
+sudo swapon /swapfile
 
-# PocketBase
-curl -L https://github.com/pocketbase/pocketbase/releases/download/v0.22.0/pocketbase_0.22.0_linux_amd64.zip \
-  -o /tmp/pb.zip
-unzip /tmp/pb.zip -d /home/sessionmgr/
-chown sessionmgr:sessionmgr /home/sessionmgr/pocketbase
+# Persistirlo en /etc/fstab para que se monte al reiniciar
+echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
 
-# Swap 1 GB (seguro adicional para el VPS de 1 GB)
-fallocate -l 1G /swapfile && chmod 600 /swapfile
-mkswap /swapfile && swapon /swapfile
-echo '/swapfile none swap sw 0 0' >> /etc/fstab
+# Reducir agresividad de swap (mejor para SQLite)
+echo 'vm.swappiness=10' | sudo tee /etc/sysctl.d/99-swappiness.conf
+sudo sysctl --system
+
+# Verificar
+free -h
+# Esperado: Swap: 2.0Gi
 ```
 
-### systemd unit (`/etc/systemd/system/pocketbase.service`)
+---
 
-```ini
-[Unit]
-Description=PocketBase
-After=network.target
+## 3. Software base en la VPS (una sola vez)
 
-[Service]
-Type=simple
-User=sessionmgr
-Group=sessionmgr
-WorkingDirectory=/home/sessionmgr
-ExecStart=/home/sessionmgr/pocketbase serve --http=127.0.0.1:8090 --dir=/home/sessionmgr/pb_data --hooksDir=/home/sessionmgr/app/pb_hooks
-Restart=on-failure
-RestartSec=3
-MemoryMax=256M
-Environment=ANTHROPIC_API_KEY=changeme
+```bash
+sudo apt update && sudo apt upgrade -y
+sudo apt install -y nginx certbot python3-certbot-nginx unzip ufw rsync
 
-[Install]
-WantedBy=multi-user.target
+# UFW alineado con el firewall de Lightsail
+sudo ufw default deny incoming
+sudo ufw allow 22/tcp
+sudo ufw allow 80/tcp
+sudo ufw allow 443/tcp
+sudo ufw --force enable
 ```
 
-### Caddyfile (`/etc/caddy/Caddyfile`)
+Si ya usabas el VPS para Art Chat / Piles, **PM2 y Node ya están instalados**. Si no:
 
-```caddy
-app.tudominio.com {
-    encode zstd gzip
+```bash
+curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+sudo apt install -y nodejs
+sudo npm install -g pm2
+pm2 startup systemd -u ubuntu --hp /home/ubuntu
+# Copia y ejecuta la línea sudo que PM2 imprime, para que arranque al boot.
+```
 
-    # Frontend estático
-    root * /home/sessionmgr/app/frontend
-    try_files {path} /index.html
-    file_server
+---
 
-    # Backend PocketBase
-    handle_path /api/* {
-        reverse_proxy 127.0.0.1:8090
+## 4. Estructura del proyecto en el VPS
+
+```bash
+mkdir -p /home/ubuntu/session-manager/{frontend,pb_data,pb_hooks,pb_migrations}
+cd /home/ubuntu/session-manager
+
+# Bajar PocketBase v0.37.3 (la misma versión contra la que corren los integration tests)
+PB_VER=0.37.3
+curl -L -o pb.zip "https://github.com/pocketbase/pocketbase/releases/download/v${PB_VER}/pocketbase_${PB_VER}_linux_amd64.zip"
+unzip pb.zip pocketbase
+chmod +x pocketbase
+rm pb.zip
+```
+
+> **Por qué v0.37.3:** la generación de migraciones del repo emite el formato JSON de v0.23+ (system fields explícitos `id/created/updated`, `passwordAuth.identityFields`, etc.). Versiones < 0.23 fallan al aplicar la migración.
+
+---
+
+## 5. Conseguir la API key de Gemini
+
+1. Entra a <https://aistudio.google.com/app/apikey>.
+2. **Create API key** → elige el proyecto de Google Cloud (el plan gratis cubre de sobra el caso de uso).
+3. Copia la clave — la usas en el siguiente paso. **No la pegues en git.**
+
+> El hook server-side (`pb_hooks/game_created.pb.js`) usa el modelo `gemini-2.5-flash` por defecto y solo llama a la API cuando alguien crea un juego en el catálogo, así que el coste es marginal.
+
+---
+
+## 6. Arrancar PocketBase con PM2
+
+```bash
+cd /home/ubuntu/session-manager
+
+# Inyecta la GEMINI_API_KEY como variable de entorno del proceso
+GEMINI_API_KEY="pega_tu_key_aqui" \
+  pm2 start ./pocketbase \
+    --name session-manager-pb \
+    -- serve \
+       --http=127.0.0.1:8090 \
+       --dir=/home/ubuntu/session-manager/pb_data \
+       --hooksDir=/home/ubuntu/session-manager/pb_hooks \
+       --migrationsDir=/home/ubuntu/session-manager/pb_migrations
+
+# Persistir la lista de procesos PM2 al boot
+pm2 save
+```
+
+**Crear el superuser** (necesario para el panel admin en `/_/`):
+
+```bash
+./pocketbase superuser upsert tu-email@ejemplo.com TuPasswordSeguraDe10+
+```
+
+---
+
+## 7. Nginx + HTTPS
+
+`/etc/nginx/sites-available/session-manager`:
+
+```nginx
+server {
+    listen 80;
+    server_name sessions.tudominio.com;   # <- cámbialo
+
+    # 1. Frontend estático (SvelteKit adapter-static)
+    root /home/ubuntu/session-manager/frontend;
+    index index.html;
+    location / {
+        try_files $uri $uri/ /index.html;
     }
-    handle_path /_/* {
-        reverse_proxy 127.0.0.1:8090
+
+    # 2. PocketBase REST + admin panel + realtime (SSE)
+    location ~ ^/(api|_)/ {
+        proxy_pass http://127.0.0.1:8090;
+        proxy_http_version 1.1;
+        proxy_set_header Host              $host;
+        proxy_set_header X-Real-IP         $remote_addr;
+        proxy_set_header X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+
+        # Realtime de PocketBase es Server-Sent Events: necesita
+        # buffering desactivado y un timeout largo en el upstream.
+        proxy_buffering        off;
+        proxy_cache            off;
+        proxy_read_timeout     3600s;
+        proxy_send_timeout     3600s;
     }
 
-    log {
-        output file /var/log/caddy/access.log {
-            roll_size 10mb
-            roll_keep 5
-        }
-    }
+    # 3. PWA: que el SW y el manifest no se cacheen agresivamente
+    location = /sw.js               { add_header Cache-Control "no-store"; }
+    location = /manifest.webmanifest { add_header Cache-Control "no-store"; }
+
+    client_max_body_size 5M;   # subida de imágenes de juegos
 }
 ```
 
-Caddy saca HTTPS de Let's Encrypt automáticamente al primer arranque.
-
-## Estructura del repo
-
-```
-session-manager/
-├── README.md
-├── docs/
-│   ├── BUSINESS_RULES.md
-│   ├── ARCHITECTURE.md
-│   └── DEPLOYMENT.md
-├── frontend/                     # SvelteKit
-│   ├── src/
-│   ├── static/
-│   ├── svelte.config.js          # adapter-static
-│   └── package.json
-├── pb_hooks/                     # JS hooks de PocketBase
-│   ├── achievements.pb.js        # genera logros con Claude
-│   └── xp.pb.js                  # calcula XP tras partida
-├── pb_migrations/                # migraciones de schema
-├── .github/
-│   └── workflows/
-│       ├── ci.yml                # lint + build + test
-│       └── deploy.yml            # deploy a VPS en push a main
-├── scripts/
-│   ├── deploy.sh
-│   └── backup.sh
-└── .env.example
-```
-
-## CI/CD con GitHub Actions
-
-### `.github/workflows/deploy.yml` (esquema)
-
-```yaml
-name: Deploy
-
-on:
-  push:
-    branches: [main]
-
-jobs:
-  deploy:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 20
-
-      - name: Build frontend
-        working-directory: frontend
-        run: |
-          npm ci
-          npm run build
-
-      - name: Setup SSH
-        uses: webfactory/ssh-agent@v0.9.0
-        with:
-          ssh-private-key: ${{ secrets.SSH_KEY }}
-
-      - name: Deploy
-        run: |
-          rsync -az --delete frontend/build/ \
-            sessionmgr@${{ secrets.VPS_HOST }}:/home/sessionmgr/app/frontend/
-          rsync -az --delete pb_hooks/ \
-            sessionmgr@${{ secrets.VPS_HOST }}:/home/sessionmgr/app/pb_hooks/
-          rsync -az --delete pb_migrations/ \
-            sessionmgr@${{ secrets.VPS_HOST }}:/home/sessionmgr/app/pb_migrations/
-          ssh sessionmgr@${{ secrets.VPS_HOST }} 'sudo systemctl restart pocketbase'
-```
-
-**Secrets necesarios en GitHub:**
-- `SSH_KEY` — clave privada ED25519 dedicada a despliegues.
-- `ANTHROPIC_API_KEY` — se inyecta al crear el `.env` del servidor (no al repo).
-
-**Variables de repo necesarias (Settings → Secrets and variables → Actions → Variables):**
-- `DEPLOY_HOST` — IP o dominio del VPS (sin esto, el workflow se salta limpio).
-- `DEPLOY_USER` (opcional) — usuario SSH, default `sessionmgr`.
-- `DEPLOY_APP_DIR` (opcional) — ruta remota, default `/home/sessionmgr/app`.
-
-El workflow `deploy.yml` se dispara cuando CI termina verde sobre `main`,
-o manualmente desde la pestaña Actions. Mientras `DEPLOY_HOST` esté
-vacío, el job se salta — útil para clonar el repo y no romper Actions
-hasta que tengas VPS aprovisionado.
-
-El usuario `sessionmgr` necesita una línea en `sudoers.d/deploy`:
-
-```
-sessionmgr ALL=(root) NOPASSWD: /bin/systemctl restart pocketbase
-```
-
-Así el restart del servicio es la única acción privilegiada del pipeline.
-
-## Backups
-
-Cron diario 03:00 UTC (`/etc/cron.d/sessionmgr-backup`):
+Activar y certificar:
 
 ```bash
-0 3 * * * sessionmgr /home/sessionmgr/scripts/backup.sh
+sudo ln -sf /etc/nginx/sites-available/session-manager /etc/nginx/sites-enabled/
+sudo nginx -t && sudo systemctl reload nginx
+sudo certbot --nginx -d sessions.tudominio.com   # añade el bloque listen 443 + redir 80→443
 ```
 
-`backup.sh`:
+---
+
+## 8. Apuntar el DNS
+
+En Cloudflare (o donde tengas el dominio):
+
+- Tipo `A` · Nombre `sessions` · Contenido `IP-ESTÁTICA-LIGHTSAIL` · Proxy **DNS only** (nube gris) hasta que Certbot termine; luego puedes activar Proxy si quieres.
+
+`dig sessions.tudominio.com +short` debe responder con tu IP.
+
+---
+
+## 9. Primer despliegue (manual)
+
+Desde tu máquina local, en el repo:
 
 ```bash
-#!/usr/bin/env bash
-set -euo pipefail
-TS=$(date +%Y%m%d-%H%M%S)
-DEST=/home/sessionmgr/backups
-sqlite3 /home/sessionmgr/pb_data/data.db ".backup $DEST/data-$TS.db"
-tar czf $DEST/pb_data-$TS.tar.gz -C /home/sessionmgr pb_data
-rclone copy $DEST/pb_data-$TS.tar.gz b2:sessionmgr-backups/ --quiet
-find $DEST -type f -mtime +7 -delete
+# Compila todo lo derivado del manifest TS
+npm run build:migrations
+npm run build:hooks
+npm run build:types
+npm run build           # SvelteKit estático -> build/
+
+# Sube
+rsync -az --delete build/         ubuntu@TU-IP:/home/ubuntu/session-manager/frontend/
+rsync -az --delete pb_hooks/      ubuntu@TU-IP:/home/ubuntu/session-manager/pb_hooks/
+rsync -az --delete pb_migrations/ ubuntu@TU-IP:/home/ubuntu/session-manager/pb_migrations/
+
+# Reinicia PocketBase para que recargue hooks
+ssh ubuntu@TU-IP 'pm2 restart session-manager-pb'
 ```
 
-Coste en Backblaze B2: <$0.50/mes.
+O directamente: `VPS_HOST=TU-IP bash scripts/deploy.sh`.
 
-## Rollback
+---
 
-Como los artefactos son binarios + estáticos, rollback = volver al commit anterior y re-lanzar el workflow. PocketBase guarda migraciones reversibles; `pb_migrations/` incluye `down()` para las que tocan schema.
+## 10. CI/CD desde GitHub (opcional)
 
-## Dominio y DNS
+`scripts/deploy.sh` ya está alineado con tu setup (`ubuntu`, `/home/ubuntu/session-manager`, `pm2 restart`). Para activar el workflow:
 
-- Comprar dominio en Porkbun/Cloudflare Registrar (~$10/año).
-- Apuntar un A record al VPS.
-- Caddy se encarga del resto (TLS auto).
+En **Settings → Secrets and variables → Actions**:
 
-## Coste mensual estimado
+| Tipo | Nombre | Valor |
+|---|---|---|
+| Secret | `SSH_KEY` | clave privada (la `.pem` de Lightsail o una ED25519 dedicada) |
+| Variable | `DEPLOY_HOST` | IP estática de Lightsail |
+| Variable | `DEPLOY_USER` | `ubuntu` |
+| Variable | `DEPLOY_APP_DIR` | `/home/ubuntu/session-manager` |
+
+`deploy.yml` se dispara cuando CI termina verde sobre `main`. Mientras `DEPLOY_HOST` no exista como variable, el job se salta — sin red CI ✗.
+
+---
+
+## 11. Smoke test post-despliegue
+
+```bash
+# 1. PocketBase responde
+curl -s https://sessions.tudominio.com/api/health
+# {"code":200,"message":"API is healthy.","data":{...}}
+
+# 2. Frontend sirve
+curl -sI https://sessions.tudominio.com/ | head -1
+# HTTP/2 200
+
+# 3. PWA artifacts presentes
+curl -sI https://sessions.tudominio.com/manifest.webmanifest | head -1
+curl -sI https://sessions.tudominio.com/sw.js | head -1
+
+# 4. PM2 reporta el proceso
+ssh ubuntu@TU-IP 'pm2 list'   # session-manager-pb online
+
+# 5. Logs en vivo (útil al crear el primer juego para ver si Gemini responde)
+ssh ubuntu@TU-IP 'pm2 logs session-manager-pb --lines 100'
+```
+
+Si al crear un juego ves `[game_created] GEMINI_API_KEY not set, skipping…`, PM2 perdió la env var (suele pasar tras un `pm2 resurrect` sin el var presente). Re-arranca el proceso con la variable:
+
+```bash
+ssh ubuntu@TU-IP
+pm2 delete session-manager-pb
+GEMINI_API_KEY="..." pm2 start ./pocketbase --name session-manager-pb -- serve --http=127.0.0.1:8090 --dir=/home/ubuntu/session-manager/pb_data --hooksDir=/home/ubuntu/session-manager/pb_hooks --migrationsDir=/home/ubuntu/session-manager/pb_migrations
+pm2 save
+```
+
+Para que la variable sobreviva a reboots, la opción más limpia es ponerla en `/home/ubuntu/.pm2.env` y pasarla al `pm2 start` con `--update-env`, o usar **PM2 ecosystem file**:
+
+`/home/ubuntu/session-manager/ecosystem.config.cjs`:
+
+```js
+module.exports = {
+  apps: [{
+    name: "session-manager-pb",
+    script: "./pocketbase",
+    args: "serve --http=127.0.0.1:8090 --dir=./pb_data --hooksDir=./pb_hooks --migrationsDir=./pb_migrations",
+    cwd: "/home/ubuntu/session-manager",
+    env: {
+      GEMINI_API_KEY: "tu_key_real",
+    },
+  }],
+};
+```
+
+Luego: `pm2 start ecosystem.config.cjs && pm2 save`. **Este archivo no debe commitearse al repo.**
+
+---
+
+## 12. Backups
+
+PocketBase = un solo archivo SQLite en `pb_data/data.db`. Cron diario a las 3 AM:
+
+```bash
+# /etc/cron.d/sessionmgr-backup  (root)
+0 3 * * * ubuntu /home/ubuntu/session-manager/pocketbase \
+  --dir=/home/ubuntu/session-manager/pb_data \
+  backup auto-$(date +\%F).zip >> /var/log/sessionmgr-backup.log 2>&1
+```
+
+PocketBase deja los backups en `pb_data/backups/`. Para mandarlos a S3/B2, añade un `rclone copy` después.
+
+**Lightsail snapshots** (consola → Snapshots) son el plan B: snapshots manuales antes de cualquier cambio destructivo. ~$0.05/GB/mes.
+
+---
+
+## 13. Coste mensual estimado
 
 | Partida | Coste |
 |---|---|
-| VPS Hetzner CX22 | €4 |
-| Dominio (prorrateado) | €1 |
-| Backups B2 | €0.50 |
-| Claude API (generación de logros) | <€1 (cientos de juegos/mes) |
-| **Total** | **~€6.50/mes** |
-
-## Timeline realista al MVP
-
-| Semana | Entregable |
-|---|---|
-| 1 | VPS listo, PocketBase corriendo, schema base, auth con passcode, CI/CD básico. |
-| 2 | SvelteKit con pantallas: join-por-QR, perfil, catálogo de juegos, alta de juego. |
-| 3 | Sesión en vivo: contador realtime, votación, registro de partida por co-host, XP. |
-| 4 | Logros IA, sonidos/animaciones, PWA instalable, pulido. |
-
-MVP **jugable en 2 semanas** quitándose logros-IA y PWA offline para una versión 0.1 y dejando eso para v0.2.
-
-## Escalado futuro (si hace falta)
-
-- Migrar SQLite → Postgres: PocketBase lo soporta desde 0.22; reescribir nada.
-- Separar frontend a CDN (Cloudflare Pages gratis): descarga Caddy del VPS.
-- Subir VPS a 2-4 GB RAM si superan los 50 usuarios simultáneos.
-
-Ninguno de estos pasos requiere reescribir código.
+| Lightsail 1 GB | $5 |
+| Lightsail static IP (adjunta a instancia) | $0 |
+| Snapshots (2 GB conservados) | ~$0.10 |
+| Dominio (prorrateado) | ~$1 |
+| Gemini API (cientos de juegos/mes) | <$0.50 (free tier suele bastar) |
+| **Total** | **~$6.50/mes** |

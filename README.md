@@ -8,18 +8,22 @@ Sentirse como una **herramienta-juego** en sí misma: la app acompaña la reuni�
 
 ## Documentación
 
-| Documento | Contenido |
+| Documento | Cuándo leerlo |
 |---|---|
-| [docs/BUSINESS_RULES.md](docs/BUSINESS_RULES.md) | Roles, flujos, reglas de sesión, votaciones, logros, XP |
-| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Stack, modelo de datos, decisiones técnicas y *trade-offs* |
-| [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | VPS 1 GB, CI/CD desde GitHub, operación |
+| [docs/HANDOFF.md](docs/HANDOFF.md) | **Empieza aquí** si vienes nuevo (humano o agente). Mapa del repo, invariantes, recetas. |
+| [docs/VERIFICATION.md](docs/VERIFICATION.md) | Checklist tras cualquier cambio antes de commitear o desplegar. |
+| [docs/CHANGELOG.md](docs/CHANGELOG.md) | Qué se hizo en cada commit, en orden cronológico. |
+| [docs/BUSINESS_RULES.md](docs/BUSINESS_RULES.md) | Roles, flujos, reglas de sesión, votaciones, logros, XP. |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Stack, modelo de datos, decisiones técnicas y *trade-offs*. |
+| [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md) | Lightsail Ubuntu 1 GB + 2 GB swap, PM2, Nginx, Gemini key. |
+| [docs/TODO.md](docs/TODO.md) | Checklist operativa pendiente para producción. |
 
 ## Resumen ejecutivo
 
-- **Stack:** SvelteKit (PWA estática) + PocketBase (backend + SQLite + Auth + Realtime + Storage) + Caddy (HTTPS) + Claude API (Haiku 4.5) para logros.
-- **Hosting:** 1 VPS Linux de 1 GB RAM (Hetzner CX22 / DigitalOcean / Contabo). Consumo esperado en reposo ~150 MB.
-- **Despliegue:** GitHub Actions → `rsync`/`scp` + `systemd restart`. Sin Docker para ahorrar RAM.
-- **Tiempo a MVP:** ~2–3 semanas part-time.
+- **Stack:** SvelteKit (PWA estática) + PocketBase v0.37.3 (backend + SQLite + Auth + Realtime + Storage) + Nginx (HTTPS) + Gemini API (`gemini-2.5-flash`) para logros generados al crear cada juego.
+- **Hosting:** AWS Lightsail Ubuntu 1 GB + 2 GB swap, PM2 como process manager (compartido con otros proyectos del mismo VPS).
+- **Despliegue:** GitHub Actions → `rsync` + `pm2 restart` (`scripts/deploy.sh` reproducible local y en CI).
+- **Tests:** 227 unit + 12 integration (PocketBase real). Pipeline CI: `typecheck · svelte-check · vitest unit · vite build · check:migrations · check:hooks · check:types · vitest integration`.
 
 ## ¿Por qué este stack para ir rápido?
 

@@ -15,7 +15,7 @@
 
 import { evaluateTrigger } from "./achievements.js";
 
-export const ACHIEVEMENTS_MODEL_DEFAULT = "claude-haiku-4-5";
+export const ACHIEVEMENTS_MODEL_DEFAULT = "gemini-2.5-flash";
 const MAX_TOKENS = 2048;
 const MAX_ACHIEVEMENTS = 10;
 
@@ -34,7 +34,7 @@ export interface GeneratedAchievement {
   rarity: "common" | "rare" | "epic";
 }
 
-export interface ClaudePrompt {
+export interface GeminiPrompt {
   system: string;
   user: string;
 }
@@ -64,7 +64,7 @@ Cover these buckets across the 6 outputs:
 
 Return ONLY the JSON array. No prose, no markdown.`;
 
-export function buildPrompt(game: GameInfo): ClaudePrompt {
+export function buildPrompt(game: GameInfo): GeminiPrompt {
   const cats = game.categories?.length
     ? `Categories: ${game.categories.join(", ")}.`
     : "Categories: unspecified.";
@@ -82,45 +82,37 @@ export function buildPrompt(game: GameInfo): ClaudePrompt {
   return { system: SYSTEM_PROMPT, user };
 }
 
-export interface ClaudeRequestOptions {
+export interface GeminiRequestOptions {
   model?: string;
   maxTokens?: number;
 }
 
-export function buildClaudeRequest(
-  prompt: ClaudePrompt,
-  opts: ClaudeRequestOptions = {},
+export function buildGeminiRequest(
+  prompt: GeminiPrompt,
+  opts: GeminiRequestOptions = {},
 ): string {
   const body = {
-    model: opts.model ?? ACHIEVEMENTS_MODEL_DEFAULT,
-    max_tokens: opts.maxTokens ?? MAX_TOKENS,
-    system: [
-      {
-        type: "text",
-        text: prompt.system,
-        cache_control: { type: "ephemeral" },
-      },
+    systemInstruction: {
+      parts: [{ text: prompt.system }]
+    },
+    contents: [
+      { parts: [{ text: prompt.user }] }
     ],
-    messages: [{ role: "user", content: prompt.user }],
+    generationConfig: {
+      maxOutputTokens: opts.maxTokens ?? MAX_TOKENS,
+      responseMimeType: "application/json"
+    }
   };
   return JSON.stringify(body);
 }
 
-export function extractClaudeText(response: unknown): string {
+export function extractGeminiText(response: unknown): string {
   if (!response || typeof response !== "object") return "";
-  const content = (response as { content?: unknown }).content;
-  if (!Array.isArray(content)) return "";
-  for (const block of content) {
-    if (
-      block &&
-      typeof block === "object" &&
-      (block as { type?: unknown }).type === "text" &&
-      typeof (block as { text?: unknown }).text === "string"
-    ) {
-      return (block as { text: string }).text;
-    }
-  }
-  return "";
+  const candidates = (response as any).candidates;
+  if (!Array.isArray(candidates) || candidates.length === 0) return "";
+  const parts = candidates[0]?.content?.parts;
+  if (!Array.isArray(parts) || parts.length === 0) return "";
+  return parts[0]?.text || "";
 }
 
 const RARITIES = new Set(["common", "rare", "epic"]);

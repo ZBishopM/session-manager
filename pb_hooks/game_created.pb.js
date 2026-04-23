@@ -1,21 +1,21 @@
 /// <reference path="../pb_data/types.d.ts" />
 /**
- * On game creation, call Claude to generate 6 achievements and save them
+ * On game creation, call Gemini to generate 6 achievements and save them
  * as `achievements` records linked to the game.
  *
  * The network call uses PocketBase's $http.send (sync). Prompt building
  * and response parsing are delegated to pb_hooks/_core.js.
  *
- * Requires env var ANTHROPIC_API_KEY. If unset, we skip silently so
+ * Requires env var GEMINI_API_KEY. If unset, we skip silently so
  * PocketBase remains usable in local dev without leaking errors.
  */
 
 onRecordAfterCreateSuccess((e) => {
   try {
     const game = e.record;
-    const apiKey = $os.getenv("ANTHROPIC_API_KEY");
+    const apiKey = $os.getenv("GEMINI_API_KEY");
     if (!apiKey) {
-      console.log("[game_created] ANTHROPIC_API_KEY not set, skipping achievement generation");
+      console.log("[game_created] GEMINI_API_KEY not set, skipping achievement generation");
       return e.next();
     }
 
@@ -36,29 +36,26 @@ onRecordAfterCreateSuccess((e) => {
     minPlayers: game.get("min_players"),
     maxPlayers: game.get("max_players"),
   });
-  const body = core.buildClaudeRequest(prompt);
+  const body = core.buildGeminiRequest(prompt);
 
   let res;
   try {
     res = $http.send({
-      url: "https://api.anthropic.com/v1/messages",
+      url: `https://generativelanguage.googleapis.com/v1beta/models/${core.ACHIEVEMENTS_MODEL_DEFAULT}:generateContent?key=${apiKey}`,
       method: "POST",
       timeout: 45,
       headers: {
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01",
         "content-type": "application/json",
-        "anthropic-beta": "prompt-caching-2024-07-31",
       },
       body: body,
     });
   } catch (err) {
-    console.log(`[game_created] Claude API call failed: ${err}`);
+    console.log(`[game_created] Gemini API call failed: ${err}`);
     return;
   }
 
   if (res.statusCode < 200 || res.statusCode >= 300) {
-    console.log(`[game_created] Claude returned ${res.statusCode}: ${res.raw}`);
+    console.log(`[game_created] Gemini returned ${res.statusCode}: ${res.raw}`);
     return;
   }
 
@@ -66,11 +63,11 @@ onRecordAfterCreateSuccess((e) => {
   try {
     parsedResponse = JSON.parse(res.raw);
   } catch (err) {
-    console.log(`[game_created] Could not parse Claude response: ${err}`);
+    console.log(`[game_created] Could not parse Gemini response: ${err}`);
     return;
   }
 
-  const text = core.extractClaudeText(parsedResponse);
+  const text = core.extractGeminiText(parsedResponse);
   const achievements = core.parseAchievements(text);
 
     if (achievements.length === 0) {

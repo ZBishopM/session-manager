@@ -20,8 +20,8 @@
 set -euo pipefail
 
 VPS_HOST=${VPS_HOST:?VPS_HOST is required}
-VPS_USER=${VPS_USER:-sessionmgr}
-VPS_APP_DIR=${VPS_APP_DIR:-/home/sessionmgr/app}
+VPS_USER=${VPS_USER:-ubuntu}
+VPS_APP_DIR=${VPS_APP_DIR:-/home/ubuntu/session-manager}
 
 REMOTE="${VPS_USER}@${VPS_HOST}"
 
@@ -39,6 +39,6 @@ rsync -az --delete --info=progress2 pb_hooks/          "${REMOTE}:${VPS_APP_DIR}
 rsync -az --delete --info=progress2 pb_migrations/     "${REMOTE}:${VPS_APP_DIR}/pb_migrations/"
 
 echo "[deploy] restarting pocketbase"
-ssh "${REMOTE}" 'sudo systemctl restart pocketbase'
+ssh "${REMOTE}" 'pm2 restart session-manager-pb'
 
 echo "[deploy] done"
