@@ -11,8 +11,8 @@
 # Required server-side state (one-time setup, see docs/DEPLOYMENT.md):
 #   - User exists with the given name
 #   - $VPS_APP_DIR/{frontend,pb_hooks,pb_migrations} dirs exist
-#   - /etc/systemd/system/pocketbase.service is installed
-#   - That user has NOPASSWD sudo for `systemctl restart pocketbase`
+#   - PocketBase is running under PM2 as "session-manager-pb"
+#     (pm2 start ./pocketbase -- serve ..., see docs/DEPLOYMENT.md §6)
 #
 # Designed to run unchanged from a developer laptop or a GitHub Action
 # (with an ssh-agent loaded with the deploy key).
