@@ -100,8 +100,8 @@
   <p class="text-sm text-slate-400" data-testid="invites-loading">Cargando…</p>
 {:else if views.length === 0}
   <p class="text-sm text-slate-400" data-testid="invites-empty">
-    Todavía no te invitaron a nada. Marcá tu disponibilidad como jugador en
-    <a href="/availability" class="underline">Mi disponibilidad</a> y esperá al domingo.
+    Todavía no te invitaron a nada. Marca tu disponibilidad como jugador en
+    <a href="/availability" class="underline">Mi disponibilidad</a> y espera al domingo.
   </p>
 {:else}
   {#if pending.length > 0}
@@ -112,7 +112,7 @@
           <p class="text-sm text-slate-100">
             <strong>{v.host?.nickname ?? "?"}</strong> puede hostear
             <strong>{weekdayLabelEs(v.proposal.weekday)}</strong> a la
-            <strong>{timeSlotLabelEs(v.proposal.time_slot)}</strong> — ¿te sumás?
+            <strong>{timeSlotLabelEs(v.proposal.time_slot)}</strong> — ¿te sumas?
           </p>
           <div class="mt-3 flex gap-2">
             <button
@@ -151,7 +151,7 @@
             {v.host?.nickname ?? "?"} · {weekdayLabelEs(v.proposal.weekday)} {timeSlotLabelEs(v.proposal.time_slot)}
           </span>
           <span class={v.invite.response === "accepted" ? "text-emerald-300" : "text-slate-500"}>
-            {v.invite.response === "accepted" ? "✓ aceptaste" : "no podés"}
+            {v.invite.response === "accepted" ? "✓ aceptaste" : "no puedes"}
           </span>
         </li>
       {/each}

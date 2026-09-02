@@ -74,7 +74,7 @@
     <p class="text-base text-slate-100">
       <strong>{host.nickname}</strong> puede hostear
       <strong>{weekdayLabelEs(proposal.weekday)}</strong> a la
-      <strong>{timeSlotLabelEs(proposal.time_slot)}</strong> — ¿te sumás?
+      <strong>{timeSlotLabelEs(proposal.time_slot)}</strong> — ¿te sumas?
     </p>
 
     {#if invite.response === "pending"}
@@ -103,7 +103,7 @@
         ✓ Confirmaste. El host te va a mostrar un QR para entrar cuando se junten.
       </p>
     {:else}
-      <p class="text-sm text-slate-400" data-testid="invite-status">Marcaste que no podés esta vez.</p>
+      <p class="text-sm text-slate-400" data-testid="invite-status">Marcaste que no puedes esta vez.</p>
     {/if}
 
     {#if error}

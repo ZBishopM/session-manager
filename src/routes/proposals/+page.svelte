@@ -110,8 +110,8 @@
   <p class="text-sm text-slate-400" data-testid="proposals-loading">Cargando…</p>
 {:else if views.length === 0}
   <p class="text-sm text-slate-400" data-testid="proposals-empty">
-    No tenés propuestas activas todavía. Marcá tu disponibilidad como host en
-    <a href="/availability" class="underline">Mi disponibilidad</a> y esperá al domingo.
+    No tienes propuestas activas todavía. Marca tu disponibilidad como host en
+    <a href="/availability" class="underline">Mi disponibilidad</a> y espera al domingo.
   </p>
 {:else}
   <ul class="flex flex-col gap-4">

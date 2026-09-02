@@ -107,7 +107,7 @@
   <a href="/profile" class="text-xs text-slate-400">← Perfil</a>
   <h1 class="text-2xl font-bold text-slate-100">Mi disponibilidad semanal</h1>
   <p class="text-sm text-slate-400">
-    Marcá cuándo podés hostear (en tu casa) o sumarte como jugador. Todos los domingos el sistema
+    Marca cuándo puedes hostear (en tu casa) o sumarte como jugador. Todos los domingos el sistema
     junta hosts y jugadores compatibles para ese horario y te avisa.
   </p>
 </header>
@@ -173,7 +173,7 @@
 
   {#if role === "host"}
     <label class="flex flex-col gap-1 text-sm">
-      <span class="text-slate-300">¿Cuánta gente podés recibir?</span>
+      <span class="text-slate-300">¿Cuánta gente puedes recibir?</span>
       <input
         type="number"
         min="1"
@@ -190,7 +190,7 @@
     </label>
     {#if !noGroupCap}
       <label class="flex flex-col gap-1 text-sm">
-        <span class="text-slate-300">Grupo máximo con el que te sumás</span>
+        <span class="text-slate-300">Grupo máximo con el que te sumas</span>
         <input
           type="number"
           min="1"
