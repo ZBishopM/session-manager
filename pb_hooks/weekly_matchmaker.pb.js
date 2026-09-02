@@ -16,6 +16,11 @@
  *                https://gamesessions.danassistantassistant.website.
  *                Falls back to a placeholder + a log line if unset, so
  *                a missing env var doesn't silently produce broken links.
+ *
+ * Email uses PocketBase's own mailer (configured by mail_config.pb.js
+ * from SMTP_* env vars) rather than a separate webhook — sent only to
+ * players who've set an email on their profile, one message per
+ * recipient since each invite link is personal.
  */
 
 const WEEKDAY_JS_DAY = { sun: 0, mon: 1, tue: 2, wed: 3, thu: 4, fri: 5, sat: 6 };
@@ -100,6 +105,7 @@ function runWeeklyMatchmaker() {
       recipients.push({
         nickname: playerRecord.get("nickname"),
         url: `${publicUrl}/invite/${token}`,
+        email: playerRecord.get("email"),
       });
     }
 
@@ -118,6 +124,27 @@ function runWeeklyMatchmaker() {
         });
       } catch (err) {
         console.log(`[weekly_matchmaker] Discord send failed: ${err}`);
+      }
+    }
+
+    if ($app.settings().smtp.enabled) {
+      for (const recipient of recipients) {
+        if (!recipient.email) continue;
+        const email = core.buildInviteEmail(
+          { hostNickname: hostPlayer.get("nickname"), weekday: group.weekday, timeSlot: group.time_slot },
+          recipient,
+        );
+        try {
+          const message = new MailerMessage({
+            from: { address: $app.settings().meta.senderAddress, name: $app.settings().meta.senderName },
+            to: [{ address: recipient.email }],
+            subject: email.subject,
+            html: email.html,
+          });
+          $app.newMailClient().send(message);
+        } catch (err) {
+          console.log(`[weekly_matchmaker] Email send to ${recipient.email} failed: ${err}`);
+        }
       }
     }
   }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildDiscordMessage, generateInviteToken } from "./notify.js";
+import { buildDiscordMessage, buildInviteEmail, generateInviteToken } from "./notify.js";
 
 describe("generateInviteToken", () => {
   it("produces a 16-character token from the expected alphabet", () => {
@@ -44,5 +44,18 @@ describe("buildDiscordMessage", () => {
       [{ nickname: "beto", url: "https://x.test/invite/tok1" }],
     );
     expect(msg.split("\n")).toHaveLength(2);
+  });
+});
+
+describe("buildInviteEmail", () => {
+  it("names the host and day/slot in the subject, and includes the recipient's own link", () => {
+    const email = buildInviteEmail(
+      { hostNickname: "ana", weekday: "sat", timeSlot: "afternoon" },
+      { nickname: "beto", url: "https://x.test/invite/tok1" },
+    );
+    expect(email.subject).toContain("ana");
+    expect(email.subject).toContain("sábado");
+    expect(email.html).toContain("beto");
+    expect(email.html).toContain("https://x.test/invite/tok1");
   });
 });

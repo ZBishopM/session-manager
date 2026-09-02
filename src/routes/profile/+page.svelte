@@ -4,6 +4,7 @@
   import XpBar from "$lib/components/XpBar.svelte";
   import { isAuthenticated, logout } from "$lib/auth.js";
   import { user } from "$lib/stores/user.js";
+  import { collection } from "$lib/pb.js";
 
   onMount(() => {
     if (!isAuthenticated()) {
@@ -14,6 +15,23 @@
   function signOut(): void {
     logout();
     void goto("/");
+  }
+
+  let email = "";
+  let savingEmail = false;
+  let emailSaved = false;
+  $: if ($user && email === "" && $user.email) email = $user.email;
+
+  async function saveEmail(): Promise<void> {
+    if (!$user || savingEmail) return;
+    savingEmail = true;
+    emailSaved = false;
+    try {
+      await collection("players").update($user.id, { email });
+      emailSaved = true;
+    } finally {
+      savingEmail = false;
+    }
   }
 </script>
 
@@ -44,6 +62,33 @@
       </div>
     </div>
     <XpBar xp={$user.xp ?? 0} />
+  </section>
+
+  <section class="mt-4 flex flex-col gap-2 rounded-2xl bg-slate-800/70 p-4">
+    <label for="email" class="text-xs uppercase tracking-wide text-slate-400">
+      Correo para notificaciones de matchmaking
+    </label>
+    <div class="flex gap-2">
+      <input
+        id="email"
+        type="email"
+        bind:value={email}
+        on:input={() => (emailSaved = false)}
+        placeholder="tu@correo.com"
+        class="flex-1 rounded-lg bg-slate-900 px-3 py-2 text-sm text-slate-100 outline-none"
+      />
+      <button
+        type="button"
+        disabled={savingEmail}
+        on:click={saveEmail}
+        class="rounded-lg bg-gradient-to-r from-indigo-500 to-cyan-400 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50"
+      >
+        {savingEmail ? "…" : "Guardar"}
+      </button>
+    </div>
+    {#if emailSaved}
+      <p class="text-xs text-emerald-300">Guardado.</p>
+    {/if}
   </section>
 
   <div class="mt-4 flex flex-col gap-2">

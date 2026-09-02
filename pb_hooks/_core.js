@@ -28,6 +28,7 @@ __export(hooks_entry_exports, {
   RANDOM_VOTE: () => RANDOM_VOTE,
   buildDiscordMessage: () => buildDiscordMessage,
   buildGeminiRequest: () => buildGeminiRequest,
+  buildInviteEmail: () => buildInviteEmail,
   buildPrompt: () => buildPrompt,
   computeMatchAwards: () => computeMatchAwards,
   decideVotes: () => decideVotes,
@@ -550,4 +551,15 @@ function buildDiscordMessage(proposal, recipients) {
     ...recipients.map((r) => `\u2022 ${r.nickname}: ${r.url}`)
   ];
   return lines.join("\n");
+}
+function buildInviteEmail(proposal, recipient) {
+  const when = `${WEEKDAY_LABEL_ES[proposal.weekday]} ${SLOT_CONNECTOR_ES[proposal.timeSlot]} ${TIME_SLOT_LABEL_ES[proposal.timeSlot]}`;
+  return {
+    subject: `${proposal.hostNickname} propone jugar ${when}`,
+    html: [
+      `<p>Hola ${recipient.nickname},</p>`,
+      `<p><strong>${proposal.hostNickname}</strong> puede hostear ${when}. \xBFJuegas?</p>`,
+      `<p><a href="${recipient.url}">Responder a la invitaci\xF3n</a></p>`
+    ].join("\n")
+  };
 }

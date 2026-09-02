@@ -61,3 +61,24 @@ export function buildDiscordMessage(
   ];
   return lines.join("\n");
 }
+
+/**
+ * Per-recipient email, one message per player (unlike Discord's single
+ * shared-channel post) since each invite link is personal.
+ */
+export interface EmailContent {
+  subject: string;
+  html: string;
+}
+
+export function buildInviteEmail(proposal: ProposalSummary, recipient: InviteRecipient): EmailContent {
+  const when = `${WEEKDAY_LABEL_ES[proposal.weekday]} ${SLOT_CONNECTOR_ES[proposal.timeSlot]} ${TIME_SLOT_LABEL_ES[proposal.timeSlot]}`;
+  return {
+    subject: `${proposal.hostNickname} propone jugar ${when}`,
+    html: [
+      `<p>Hola ${recipient.nickname},</p>`,
+      `<p><strong>${proposal.hostNickname}</strong> puede hostear ${when}. ¿Juegas?</p>`,
+      `<p><a href="${recipient.url}">Responder a la invitación</a></p>`,
+    ].join("\n"),
+  };
+}

@@ -18,4 +18,4 @@ export {
 export { resolveVotes, decideVotes, RANDOM_VOTE } from "./voting.js";
 export { levelFromXp, progressToNextLevel, xpForAction } from "./xp.js";
 export { groupAvailabilities } from "./matchmaking.js";
-export { buildDiscordMessage, generateInviteToken } from "./notify.js";
+export { buildDiscordMessage, buildInviteEmail, generateInviteToken } from "./notify.js";
