@@ -2,7 +2,7 @@
   import { onMount } from "svelte";
   import { page } from "$app/stores";
   import { collection } from "$lib/pb.js";
-  import { weekdayLabelEs, timeSlotLabelEs } from "$core/matchmaking.js";
+  import { weekdayLabelEs, formatHourRange } from "$core/matchmaking.js";
   import type { InvitesRecord, MatchProposalsRecord, PlayersRecord } from "$core/records.js";
 
   let invite: InvitesRecord | null = null;
@@ -73,8 +73,8 @@
   <section class="flex flex-col gap-4 rounded-2xl bg-slate-800/70 p-5">
     <p class="text-base text-slate-100">
       <strong>{host.nickname}</strong> puede hostear
-      <strong>{weekdayLabelEs(proposal.weekday)}</strong> a la
-      <strong>{timeSlotLabelEs(proposal.time_slot)}</strong> — ¿te sumas?
+      <strong>{weekdayLabelEs(proposal.weekday)}</strong>
+      <strong>{formatHourRange(proposal.start_hour, proposal.end_hour)}</strong> — ¿te sumas?
     </p>
 
     {#if invite.response === "pending"}

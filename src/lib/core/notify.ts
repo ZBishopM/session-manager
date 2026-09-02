@@ -5,7 +5,7 @@
  * without touching $http or $os.
  */
 
-import { TIME_SLOT_LABEL_ES, WEEKDAY_LABEL_ES, type Weekday, type TimeSlot } from "./matchmaking.js";
+import { formatHourRange, WEEKDAY_LABEL_ES, type Weekday } from "./matchmaking.js";
 
 export interface InviteRecipient {
   nickname: string;
@@ -16,7 +16,8 @@ export interface InviteRecipient {
 export interface ProposalSummary {
   hostNickname: string;
   weekday: Weekday;
-  timeSlot: TimeSlot;
+  startHour: number;
+  endHour: number;
 }
 
 // Same alphabet/length convention as sessions.qr_token (src/lib/qr.ts),
@@ -34,29 +35,22 @@ export function generateInviteToken(random: () => number = Math.random): string 
   return token;
 }
 
+function whenText(proposal: ProposalSummary): string {
+  return `${WEEKDAY_LABEL_ES[proposal.weekday]} ${formatHourRange(proposal.startHour, proposal.endHour)}`;
+}
+
 /**
  * One Discord message per proposal, posted to a shared channel — not a
  * per-player DM (Discord webhooks can't DM arbitrary users). Names the
  * whole invited group so it reads like an actual hangout proposal, with
  * each person's own accept/decline link.
  */
-// TIME_SLOT_LABEL_ES holds the bare noun ("tarde") since it's shared with
-// the /availability dropdown; this message wants the connected phrase
-// ("a la tarde" / "de madrugada"), so that grammar stays local to here.
-const SLOT_CONNECTOR_ES: Record<TimeSlot, string> = {
-  morning: "a la",
-  afternoon: "a la",
-  evening: "a la",
-  night: "de",
-};
-
 export function buildDiscordMessage(
   proposal: ProposalSummary,
   recipients: readonly InviteRecipient[],
 ): string {
-  const when = `${WEEKDAY_LABEL_ES[proposal.weekday]} ${SLOT_CONNECTOR_ES[proposal.timeSlot]} ${TIME_SLOT_LABEL_ES[proposal.timeSlot]}`;
   const lines = [
-    `🎲 **${proposal.hostNickname}** puede hostear ${when} — ¿juegan?`,
+    `🎲 **${proposal.hostNickname}** puede hostear ${whenText(proposal)} — ¿juegan?`,
     ...recipients.map((r) => `• ${r.nickname}: ${r.url}`),
   ];
   return lines.join("\n");
@@ -72,7 +66,7 @@ export interface EmailContent {
 }
 
 export function buildInviteEmail(proposal: ProposalSummary, recipient: InviteRecipient): EmailContent {
-  const when = `${WEEKDAY_LABEL_ES[proposal.weekday]} ${SLOT_CONNECTOR_ES[proposal.timeSlot]} ${TIME_SLOT_LABEL_ES[proposal.timeSlot]}`;
+  const when = whenText(proposal);
   return {
     subject: `${proposal.hostNickname} propone jugar ${when}`,
     html: [

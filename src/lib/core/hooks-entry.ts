@@ -17,5 +17,5 @@ export {
 } from "./achievement-generator.js";
 export { resolveVotes, decideVotes, RANDOM_VOTE } from "./voting.js";
 export { levelFromXp, progressToNextLevel, xpForAction } from "./xp.js";
-export { groupAvailabilities } from "./matchmaking.js";
+export { groupAvailabilities, formatHourRange } from "./matchmaking.js";
 export { buildDiscordMessage, buildInviteEmail, generateInviteToken } from "./notify.js";

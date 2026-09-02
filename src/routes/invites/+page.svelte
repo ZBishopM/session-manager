@@ -4,7 +4,7 @@
   import { isAuthenticated } from "$lib/auth.js";
   import { collection } from "$lib/pb.js";
   import { user } from "$lib/stores/user.js";
-  import { weekdayLabelEs, timeSlotLabelEs } from "$core/matchmaking.js";
+  import { weekdayLabelEs, formatHourRange } from "$core/matchmaking.js";
   import type { InvitesRecord, MatchProposalsRecord, PlayersRecord } from "$core/records.js";
 
   interface InviteView {
@@ -111,8 +111,8 @@
         <li class="rounded-2xl bg-slate-800/70 p-4" data-testid="invite-{v.invite.id}">
           <p class="text-sm text-slate-100">
             <strong>{v.host?.nickname ?? "?"}</strong> puede hostear
-            <strong>{weekdayLabelEs(v.proposal.weekday)}</strong> a la
-            <strong>{timeSlotLabelEs(v.proposal.time_slot)}</strong> — ¿te sumas?
+            <strong>{weekdayLabelEs(v.proposal.weekday)}</strong>
+            <strong>{formatHourRange(v.proposal.start_hour, v.proposal.end_hour)}</strong> — ¿te sumas?
           </p>
           <div class="mt-3 flex gap-2">
             <button
@@ -148,7 +148,7 @@
           data-testid="invite-{v.invite.id}"
         >
           <span>
-            {v.host?.nickname ?? "?"} · {weekdayLabelEs(v.proposal.weekday)} {timeSlotLabelEs(v.proposal.time_slot)}
+            {v.host?.nickname ?? "?"} · {weekdayLabelEs(v.proposal.weekday)} {formatHourRange(v.proposal.start_hour, v.proposal.end_hour)}
           </span>
           <span class={v.invite.response === "accepted" ? "text-emerald-300" : "text-slate-500"}>
             {v.invite.response === "accepted" ? "✓ aceptaste" : "no puedes"}

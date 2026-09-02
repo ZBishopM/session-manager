@@ -5,7 +5,7 @@
   import { collection } from "$lib/pb.js";
   import { user } from "$lib/stores/user.js";
   import { generateQrToken } from "$lib/qr.js";
-  import { weekdayLabelEs, timeSlotLabelEs } from "$core/matchmaking.js";
+  import { weekdayLabelEs, formatHourRange } from "$core/matchmaking.js";
   import type { MatchProposalsRecord, InvitesRecord, PlayersRecord } from "$core/records.js";
 
   interface ProposalView {
@@ -118,7 +118,7 @@
     {#each views as v (v.proposal.id)}
       <li class="rounded-2xl bg-slate-800/70 p-4" data-testid="proposal-{v.proposal.id}">
         <p class="text-base font-semibold text-slate-100">
-          {weekdayLabelEs(v.proposal.weekday)} a la {timeSlotLabelEs(v.proposal.time_slot)}
+          {weekdayLabelEs(v.proposal.weekday)} {formatHourRange(v.proposal.start_hour, v.proposal.end_hour)}
         </p>
         <ul class="mt-2 flex flex-col gap-1 text-sm">
           {#each v.invites as inv (inv.id)}

@@ -96,14 +96,16 @@ export interface AvailabilitiesRecord extends BaseRecord {
   player: string;
   role: "host" | "player" | "";
   weekday: "mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun" | "";
-  time_slot: "morning" | "afternoon" | "evening" | "night" | "";
+  start_hour: number;
+  end_hour: number;
   capacity?: number;
   max_group_size?: number;
 }
 
 export interface MatchProposalsRecord extends BaseRecord {
   weekday: "mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun" | "";
-  time_slot: "morning" | "afternoon" | "evening" | "night" | "";
+  start_hour: number;
+  end_hour: number;
   proposed_date: string;
   host: string;
   status: "proposed" | "confirmed" | "cancelled" | "expired" | "";

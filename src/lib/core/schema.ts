@@ -264,7 +264,15 @@ export const COLLECTIONS: readonly CollectionDef[] = [
 
   // --- Weekly matchmaking (added 2026-09-02) ---------------------------
   // Standing weekly host/player availability, independent of any one
-  // session. A player can post either or both roles per weekday+slot.
+  // session. A player can post either or both roles per weekday+range.
+  //
+  // Real hour ranges (added 2026-09-02, later same day) — this collection
+  // was already live under the original time_slot shape, so the field
+  // change below isn't what's actually applied by the generated
+  // 1735689600_matchmaking.js (frozen to its original shape, see
+  // MATCHMAKING_SNAPSHOT in build-migrations.ts). The real alteration is
+  // pb_migrations/1735689700_availability_hours.js, hand-written the same
+  // way 1735689601_matchmaking_rules.js patched already-applied rules.
   {
     name: "availabilities",
     type: "base",
@@ -272,14 +280,17 @@ export const COLLECTIONS: readonly CollectionDef[] = [
       { name: "player", type: "relation", relationTo: "players", maxSelect: 1, required: true },
       { name: "role", type: "select", required: true, maxSelect: 1, options: ["host", "player"] },
       { name: "weekday", type: "select", required: true, maxSelect: 1, options: ["mon", "tue", "wed", "thu", "fri", "sat", "sun"] },
-      { name: "time_slot", type: "select", required: true, maxSelect: 1, options: ["morning", "afternoon", "evening", "night"] },
+      // Half-open [start_hour, end_hour) range, whole-hour granularity.
+      // end_hour may be 24 to mean "through midnight."
+      { name: "start_hour", type: "number", required: true, min: 0, max: 23 },
+      { name: "end_hour", type: "number", required: true, min: 1, max: 24 },
       // Host rows only: max attendees they can host. Player rows only:
       // max group size they're willing to join; null = no preference.
       { name: "capacity", type: "number", min: 1 },
       { name: "max_group_size", type: "number", min: 1 },
     ],
     indexes: [
-      "CREATE UNIQUE INDEX idx_avail_player_role_slot ON availabilities (player, role, weekday, time_slot)",
+      "CREATE UNIQUE INDEX idx_avail_player_role_range ON availabilities (player, role, weekday, start_hour, end_hour)",
     ],
     listRule: "",
     viewRule: "",
@@ -288,17 +299,23 @@ export const COLLECTIONS: readonly CollectionDef[] = [
     deleteRule: "player = @request.auth.id",
   },
 
-  // The weekly cron's output: one row per (host, weekday, time_slot) it
-  // matched this week. Created only by the matchmaker hook (createRule
-  // null — $app.save() in a hook bypasses API rules entirely); the host
-  // can update their own proposal client-side to confirm it once enough
-  // players accept.
+  // The weekly cron's output: one row per (host, weekday) group it matched
+  // this week — start_hour/end_hour is the host's own range (players just
+  // need enough overlap with it, see matchmaking.ts). Created only by the
+  // matchmaker hook (createRule null — $app.save() in a hook bypasses API
+  // rules entirely); the host can update their own proposal client-side
+  // to confirm it once enough players accept.
+  //
+  // Real hour ranges: same note as availabilities above — the actual
+  // alteration lives in pb_migrations/1735689700_availability_hours.js,
+  // not in the frozen 1735689600_matchmaking.js.
   {
     name: "match_proposals",
     type: "base",
     fields: [
       { name: "weekday", type: "select", required: true, maxSelect: 1, options: ["mon", "tue", "wed", "thu", "fri", "sat", "sun"] },
-      { name: "time_slot", type: "select", required: true, maxSelect: 1, options: ["morning", "afternoon", "evening", "night"] },
+      { name: "start_hour", type: "number", required: true, min: 0, max: 23 },
+      { name: "end_hour", type: "number", required: true, min: 1, max: 24 },
       { name: "proposed_date", type: "date", required: true },
       { name: "host", type: "relation", relationTo: "players", maxSelect: 1, required: true },
       { name: "status", type: "select", required: true, maxSelect: 1, options: ["proposed", "confirmed", "cancelled", "expired"] },

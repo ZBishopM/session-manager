@@ -23,9 +23,9 @@ describe("generateInviteToken", () => {
 });
 
 describe("buildDiscordMessage", () => {
-  it("names the host, the day/slot, and lists every recipient with their own link", () => {
+  it("names the host, the day/hour range, and lists every recipient with their own link", () => {
     const msg = buildDiscordMessage(
-      { hostNickname: "ana", weekday: "sat", timeSlot: "afternoon" },
+      { hostNickname: "ana", weekday: "sat", startHour: 14, endHour: 18 },
       [
         { nickname: "beto", url: "https://x.test/invite/tok1" },
         { nickname: "carla", url: "https://x.test/invite/tok2" },
@@ -33,14 +33,14 @@ describe("buildDiscordMessage", () => {
     );
     expect(msg).toContain("ana");
     expect(msg).toContain("sábado");
-    expect(msg).toContain("tarde");
+    expect(msg).toContain("14:00–18:00");
     expect(msg).toContain("beto: https://x.test/invite/tok1");
     expect(msg).toContain("carla: https://x.test/invite/tok2");
   });
 
   it("handles a single recipient", () => {
     const msg = buildDiscordMessage(
-      { hostNickname: "ana", weekday: "sun", timeSlot: "night" },
+      { hostNickname: "ana", weekday: "sun", startHour: 21, endHour: 24 },
       [{ nickname: "beto", url: "https://x.test/invite/tok1" }],
     );
     expect(msg.split("\n")).toHaveLength(2);
@@ -48,13 +48,14 @@ describe("buildDiscordMessage", () => {
 });
 
 describe("buildInviteEmail", () => {
-  it("names the host and day/slot in the subject, and includes the recipient's own link", () => {
+  it("names the host and day/hour range in the subject, and includes the recipient's own link", () => {
     const email = buildInviteEmail(
-      { hostNickname: "ana", weekday: "sat", timeSlot: "afternoon" },
+      { hostNickname: "ana", weekday: "sat", startHour: 14, endHour: 18 },
       { nickname: "beto", url: "https://x.test/invite/tok1" },
     );
     expect(email.subject).toContain("ana");
     expect(email.subject).toContain("sábado");
+    expect(email.html).toContain("14:00–18:00");
     expect(email.html).toContain("beto");
     expect(email.html).toContain("https://x.test/invite/tok1");
   });

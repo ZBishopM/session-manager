@@ -65,6 +65,56 @@ const MATCHMAKING_COLLECTION_NAMES = [
 ] as const;
 
 /**
+ * Frozen shape of `availabilities`/`match_proposals` as first applied by
+ * 1735689600_matchmaking.js (time_slot enum, not the later start_hour/
+ * end_hour range shape). Same reasoning as INIT_COLLECTION_NAMES above:
+ * this migration already ran against prod, so its generated content must
+ * never change even though schema.ts's live COLLECTIONS evolved past it
+ * the same day (see pb_migrations/1735689700_availability_hours.js for
+ * the real alteration). `invites`/`push_subscriptions` haven't diverged
+ * from their original shape, so they're still read live from COLLECTIONS.
+ */
+const MATCHMAKING_SNAPSHOT: readonly CollectionDef[] = [
+  {
+    name: "availabilities",
+    type: "base",
+    fields: [
+      { name: "player", type: "relation", relationTo: "players", maxSelect: 1, required: true },
+      { name: "role", type: "select", required: true, maxSelect: 1, options: ["host", "player"] },
+      { name: "weekday", type: "select", required: true, maxSelect: 1, options: ["mon", "tue", "wed", "thu", "fri", "sat", "sun"] },
+      { name: "time_slot", type: "select", required: true, maxSelect: 1, options: ["morning", "afternoon", "evening", "night"] },
+      { name: "capacity", type: "number", min: 1 },
+      { name: "max_group_size", type: "number", min: 1 },
+    ],
+    indexes: [
+      "CREATE UNIQUE INDEX idx_avail_player_role_slot ON availabilities (player, role, weekday, time_slot)",
+    ],
+    listRule: "",
+    viewRule: "",
+    createRule: "player = @request.auth.id",
+    updateRule: "player = @request.auth.id",
+    deleteRule: "player = @request.auth.id",
+  },
+  {
+    name: "match_proposals",
+    type: "base",
+    fields: [
+      { name: "weekday", type: "select", required: true, maxSelect: 1, options: ["mon", "tue", "wed", "thu", "fri", "sat", "sun"] },
+      { name: "time_slot", type: "select", required: true, maxSelect: 1, options: ["morning", "afternoon", "evening", "night"] },
+      { name: "proposed_date", type: "date", required: true },
+      { name: "host", type: "relation", relationTo: "players", maxSelect: 1, required: true },
+      { name: "status", type: "select", required: true, maxSelect: 1, options: ["proposed", "confirmed", "cancelled", "expired"] },
+      { name: "session", type: "relation", relationTo: "sessions", maxSelect: 1 },
+    ],
+    listRule: "",
+    viewRule: "",
+    createRule: null,
+    updateRule: "host = @request.auth.id",
+    deleteRule: null,
+  },
+];
+
+/**
  * Build a migration that creates exactly `toCreate`, validating relation
  * targets against the fuller `allCollections` (so e.g. a new collection
  * relating to `players` type-checks without `players` itself needing to
@@ -122,8 +172,12 @@ export function buildInitMigration(
 export function buildMatchmakingMigration(
   allCollections: readonly CollectionDef[] = COLLECTIONS,
 ): string {
+  const frozenNames = new Set(MATCHMAKING_SNAPSHOT.map((c) => c.name));
   const names: readonly string[] = MATCHMAKING_COLLECTION_NAMES;
-  const toCreate = allCollections.filter((c) => names.includes(c.name));
+  const toCreate = [
+    ...MATCHMAKING_SNAPSHOT,
+    ...allCollections.filter((c) => names.includes(c.name) && !frozenNames.has(c.name)),
+  ];
   return buildMigration(toCreate, allCollections);
 }
 

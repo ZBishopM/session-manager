@@ -35,6 +35,7 @@ __export(hooks_entry_exports, {
   emptyStats: () => emptyStats,
   evaluateTrigger: () => evaluateTrigger,
   extractGeminiText: () => extractGeminiText,
+  formatHourRange: () => formatHourRange,
   generateInviteToken: () => generateInviteToken,
   groupAvailabilities: () => groupAvailabilities,
   levelFromXp: () => levelFromXp,
@@ -483,24 +484,25 @@ var WEEKDAY_LABEL_ES = {
   sat: "s\xE1bado",
   sun: "domingo"
 };
-var TIME_SLOT_LABEL_ES = {
-  morning: "ma\xF1ana",
-  afternoon: "tarde",
-  evening: "noche",
-  night: "madrugada"
-};
+function formatHourRange(startHour, endHour) {
+  const pad = (h) => String(h % 24).padStart(2, "0");
+  return `${pad(startHour)}:00\u2013${pad(endHour)}:00`;
+}
+var MIN_OVERLAP_HOURS = 3;
+function overlapHours(aStart, aEnd, bStart, bEnd) {
+  return Math.min(aEnd, bEnd) - Math.max(aStart, bStart);
+}
 function groupAvailabilities(availabilities) {
-  const bySlot = /* @__PURE__ */ new Map();
+  const byWeekday = /* @__PURE__ */ new Map();
   for (const a of availabilities) {
-    const key = `${a.weekday}|${a.time_slot}`;
-    const list = bySlot.get(key) ?? [];
+    const list = byWeekday.get(a.weekday) ?? [];
     list.push(a);
-    bySlot.set(key, list);
+    byWeekday.set(a.weekday, list);
   }
   const groups = [];
-  for (const [, slotRows] of bySlot) {
-    const hosts = slotRows.filter((r) => r.role === "host").sort((a, b) => (b.capacity ?? 0) - (a.capacity ?? 0));
-    const players = slotRows.filter((r) => r.role === "player");
+  for (const [, dayRows] of byWeekday) {
+    const hosts = dayRows.filter((r) => r.role === "host").sort((a, b) => (b.capacity ?? 0) - (a.capacity ?? 0));
+    const players = dayRows.filter((r) => r.role === "player");
     const claimed = /* @__PURE__ */ new Set();
     for (const host of hosts) {
       const capacity = host.capacity ?? Infinity;
@@ -509,6 +511,8 @@ function groupAvailabilities(availabilities) {
         if (assigned.length >= capacity) break;
         if (claimed.has(candidate.player)) continue;
         if (candidate.player === host.player) continue;
+        const overlap = overlapHours(host.start_hour, host.end_hour, candidate.start_hour, candidate.end_hour);
+        if (overlap < MIN_OVERLAP_HOURS) continue;
         const wouldBeGroupSize = 1 + assigned.length + 1;
         const cap = candidate.max_group_size;
         if (cap != null && wouldBeGroupSize > cap) continue;
@@ -519,7 +523,8 @@ function groupAvailabilities(availabilities) {
         groups.push({
           host: host.player,
           weekday: host.weekday,
-          time_slot: host.time_slot,
+          start_hour: host.start_hour,
+          end_hour: host.end_hour,
           players: assigned
         });
       }
@@ -538,22 +543,18 @@ function generateInviteToken(random = Math.random) {
   }
   return token;
 }
-var SLOT_CONNECTOR_ES = {
-  morning: "a la",
-  afternoon: "a la",
-  evening: "a la",
-  night: "de"
-};
+function whenText(proposal) {
+  return `${WEEKDAY_LABEL_ES[proposal.weekday]} ${formatHourRange(proposal.startHour, proposal.endHour)}`;
+}
 function buildDiscordMessage(proposal, recipients) {
-  const when = `${WEEKDAY_LABEL_ES[proposal.weekday]} ${SLOT_CONNECTOR_ES[proposal.timeSlot]} ${TIME_SLOT_LABEL_ES[proposal.timeSlot]}`;
   const lines = [
-    `\u{1F3B2} **${proposal.hostNickname}** puede hostear ${when} \u2014 \xBFjuegan?`,
+    `\u{1F3B2} **${proposal.hostNickname}** puede hostear ${whenText(proposal)} \u2014 \xBFjuegan?`,
     ...recipients.map((r) => `\u2022 ${r.nickname}: ${r.url}`)
   ];
   return lines.join("\n");
 }
 function buildInviteEmail(proposal, recipient) {
-  const when = `${WEEKDAY_LABEL_ES[proposal.weekday]} ${SLOT_CONNECTOR_ES[proposal.timeSlot]} ${TIME_SLOT_LABEL_ES[proposal.timeSlot]}`;
+  const when = whenText(proposal);
   return {
     subject: `${proposal.hostNickname} propone jugar ${when}`,
     html: [

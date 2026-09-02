@@ -4,34 +4,37 @@
   import { isAuthenticated } from "$lib/auth.js";
   import { collection } from "$lib/pb.js";
   import { user } from "$lib/stores/user.js";
+  import { WEEKDAY_LABEL_ES, formatHourRange, type Weekday } from "$core/matchmaking.js";
   import type { AvailabilitiesRecord } from "$core/records.js";
 
-  const WEEKDAYS: Array<{ value: AvailabilitiesRecord["weekday"]; label: string }> = [
-    { value: "mon", label: "Lunes" },
-    { value: "tue", label: "Martes" },
-    { value: "wed", label: "Miércoles" },
-    { value: "thu", label: "Jueves" },
-    { value: "fri", label: "Viernes" },
-    { value: "sat", label: "Sábado" },
-    { value: "sun", label: "Domingo" },
-  ];
-  const SLOTS: Array<{ value: AvailabilitiesRecord["time_slot"]; label: string }> = [
-    { value: "morning", label: "Mañana" },
-    { value: "afternoon", label: "Tarde" },
-    { value: "evening", label: "Noche" },
-    { value: "night", label: "Madrugada" },
-  ];
+  const WEEKDAYS: Weekday[] = ["mon", "tue", "wed", "thu", "fri", "sat", "sun"];
+  const WEEKDAY_SHORT_ES: Record<Weekday, string> = {
+    mon: "Lu",
+    tue: "Ma",
+    wed: "Mi",
+    thu: "Ju",
+    fri: "Vi",
+    sat: "Sá",
+    sun: "Do",
+  };
+  const HOURS = Array.from({ length: 24 }, (_, h) => h);
+  const CELL_HEIGHT_PX = 28;
+  // Center the initial scroll around evening hours (board-game-night usage
+  // pattern) instead of dumping the user at 00:00.
+  const DEFAULT_SCROLL_HOUR = 15;
 
   let role: AvailabilitiesRecord["role"] = "player";
-  let weekday: AvailabilitiesRecord["weekday"] = "sat";
-  let timeSlot: AvailabilitiesRecord["time_slot"] = "afternoon";
   let capacity = 4;
   let maxGroupSize = 6;
   let noGroupCap = true;
 
+  /** "weekday:hour" keys currently toggled on the grid, not yet saved. */
+  let selected = new Set<string>();
+  let gridEl: HTMLDivElement;
+
   let mine: AvailabilitiesRecord[] = [];
   let loading = true;
-  let pending = false;
+  let saving = false;
   let error: string | null = null;
 
   onMount(async () => {
@@ -39,6 +42,7 @@
       void goto(`/auth?next=${encodeURIComponent("/availability")}`);
       return;
     }
+    if (gridEl) gridEl.scrollTop = DEFAULT_SCROLL_HOUR * CELL_HEIGHT_PX;
     await load();
   });
 
@@ -48,7 +52,7 @@
     try {
       mine = await collection("availabilities").getFullList({
         filter: `player = "${$user.id}"`,
-        sort: "weekday,time_slot,role",
+        sort: "weekday,start_hour,role",
       });
     } catch (err) {
       error = "No pudimos cargar tu disponibilidad.";
@@ -59,34 +63,73 @@
   }
 
   function dayLabel(w: string): string {
-    return WEEKDAYS.find((d) => d.value === w)?.label ?? w;
-  }
-  function slotLabel(s: string): string {
-    return SLOTS.find((x) => x.value === s)?.label ?? s;
+    return WEEKDAY_LABEL_ES[w as Weekday] ?? w;
   }
 
-  async function add(e: SubmitEvent): Promise<void> {
-    e.preventDefault();
-    if (!$user || pending) return;
-    pending = true;
+  function cellKey(weekday: Weekday, hour: number): string {
+    return `${weekday}:${hour}`;
+  }
+
+  function toggleCell(weekday: Weekday, hour: number): void {
+    const key = cellKey(weekday, hour);
+    if (selected.has(key)) {
+      selected.delete(key);
+    } else {
+      selected.add(key);
+    }
+    selected = selected; // eslint-disable-line no-self-assign -- Svelte reactivity needs the assignment
+  }
+
+  /** Merges toggled hours into contiguous [start,end) ranges per weekday. */
+  function selectionToRanges(): Array<{ weekday: Weekday; start_hour: number; end_hour: number }> {
+    const ranges: Array<{ weekday: Weekday; start_hour: number; end_hour: number }> = [];
+    for (const weekday of WEEKDAYS) {
+      const hours = HOURS.filter((h) => selected.has(cellKey(weekday, h))).sort((a, b) => a - b);
+      let rangeStart: number | null = null;
+      let prev: number | null = null;
+      for (const h of hours) {
+        if (rangeStart === null) {
+          rangeStart = h;
+        } else if (prev !== null && h !== prev + 1) {
+          ranges.push({ weekday, start_hour: rangeStart, end_hour: prev + 1 });
+          rangeStart = h;
+        }
+        prev = h;
+      }
+      if (rangeStart !== null && prev !== null) {
+        ranges.push({ weekday, start_hour: rangeStart, end_hour: prev + 1 });
+      }
+    }
+    return ranges;
+  }
+
+  async function save(): Promise<void> {
+    if (!$user || saving) return;
+    const ranges = selectionToRanges();
+    if (ranges.length === 0) return;
+    saving = true;
     error = null;
     try {
-      await collection("availabilities").create({
-        player: $user.id,
-        role,
-        weekday,
-        time_slot: timeSlot,
-        capacity: role === "host" ? capacity : undefined,
-        max_group_size: role === "player" && !noGroupCap ? maxGroupSize : undefined,
-      });
+      for (const r of ranges) {
+        await collection("availabilities").create({
+          player: $user.id,
+          role,
+          weekday: r.weekday,
+          start_hour: r.start_hour,
+          end_hour: r.end_hour,
+          capacity: role === "host" ? capacity : undefined,
+          max_group_size: role === "player" && !noGroupCap ? maxGroupSize : undefined,
+        });
+      }
+      selected = new Set();
       await load();
     } catch (err) {
-      // Unique index (player, role, weekday, time_slot) — most likely
-      // failure is "you already posted this exact slot."
-      error = "No se pudo guardar. ¿Ya marcaste ese rol+día+horario?";
+      // Unique index (player, role, weekday, start_hour, end_hour) — most
+      // likely failure is an exact-duplicate block already saved.
+      error = "No se pudo guardar. ¿Ya marcaste alguno de esos horarios?";
       console.error(err);
     } finally {
-      pending = false;
+      saving = false;
     }
   }
 
@@ -107,8 +150,8 @@
   <a href="/profile" class="text-xs text-slate-400">← Perfil</a>
   <h1 class="text-2xl font-bold text-slate-100">Mi disponibilidad semanal</h1>
   <p class="text-sm text-slate-400">
-    Marca cuándo puedes hostear (en tu casa) o sumarte como jugador. Todos los domingos el sistema
-    junta hosts y jugadores compatibles para ese horario y te avisa.
+    Toca las horas en las que puedes hostear (en tu casa) o sumarte como jugador. Todos los
+    domingos el sistema junta hosts y jugadores compatibles y te avisa.
   </p>
 </header>
 
@@ -118,100 +161,110 @@
   </p>
 {/if}
 
-<form class="mb-8 flex flex-col gap-4" on:submit={add}>
-  <div class="flex gap-2" role="radiogroup" aria-label="Rol">
-    <button
-      type="button"
-      class="flex-1 rounded-full border px-3 py-2 text-sm font-semibold transition-colors
-             {role === 'host'
-               ? 'border-cyan-300 bg-indigo-500/20 text-cyan-100'
-               : 'border-slate-600 text-slate-300'}"
-      data-testid="role-host"
-      on:click={() => (role = "host")}
-    >
-      Host (mi casa)
-    </button>
-    <button
-      type="button"
-      class="flex-1 rounded-full border px-3 py-2 text-sm font-semibold transition-colors
-             {role === 'player'
-               ? 'border-cyan-300 bg-indigo-500/20 text-cyan-100'
-               : 'border-slate-600 text-slate-300'}"
-      data-testid="role-player"
-      on:click={() => (role = "player")}
-    >
-      Jugador
-    </button>
-  </div>
+<div class="mb-4 flex gap-2" role="radiogroup" aria-label="Rol">
+  <button
+    type="button"
+    class="flex-1 rounded-full border px-3 py-2 text-sm font-semibold transition-colors
+           {role === 'host'
+             ? 'border-cyan-300 bg-indigo-500/20 text-cyan-100'
+             : 'border-slate-600 text-slate-300'}"
+    data-testid="role-host"
+    on:click={() => (role = "host")}
+  >
+    Host (mi casa)
+  </button>
+  <button
+    type="button"
+    class="flex-1 rounded-full border px-3 py-2 text-sm font-semibold transition-colors
+           {role === 'player'
+             ? 'border-cyan-300 bg-indigo-500/20 text-cyan-100'
+             : 'border-slate-600 text-slate-300'}"
+    data-testid="role-player"
+    on:click={() => (role = "player")}
+  >
+    Jugador
+  </button>
+</div>
 
-  <div class="grid grid-cols-2 gap-3">
-    <label class="flex flex-col gap-1 text-sm">
-      <span class="text-slate-300">Día</span>
-      <select
-        bind:value={weekday}
-        data-testid="weekday"
-        class="rounded-md border border-slate-600 bg-slate-900 px-3 py-2 text-base text-slate-100"
-      >
-        {#each WEEKDAYS as d (d.value)}
-          <option value={d.value}>{d.label}</option>
-        {/each}
-      </select>
-    </label>
-    <label class="flex flex-col gap-1 text-sm">
-      <span class="text-slate-300">Horario</span>
-      <select
-        bind:value={timeSlot}
-        data-testid="time-slot"
-        class="rounded-md border border-slate-600 bg-slate-900 px-3 py-2 text-base text-slate-100"
-      >
-        {#each SLOTS as s (s.value)}
-          <option value={s.value}>{s.label}</option>
-        {/each}
-      </select>
-    </label>
-  </div>
-
-  {#if role === "host"}
-    <label class="flex flex-col gap-1 text-sm">
-      <span class="text-slate-300">¿Cuánta gente puedes recibir?</span>
+{#if role === "host"}
+  <label class="mb-4 flex flex-col gap-1 text-sm">
+    <span class="text-slate-300">¿Cuánta gente puedes recibir?</span>
+    <input
+      type="number"
+      min="1"
+      max="20"
+      bind:value={capacity}
+      data-testid="capacity"
+      class="w-28 rounded-md border border-slate-600 bg-slate-900 px-3 py-2 text-base text-slate-100"
+    />
+  </label>
+{:else}
+  <label class="mb-2 flex items-center gap-2 text-sm text-slate-300">
+    <input type="checkbox" bind:checked={noGroupCap} data-testid="no-group-cap" />
+    No me importa el tamaño del grupo
+  </label>
+  {#if !noGroupCap}
+    <label class="mb-4 flex flex-col gap-1 text-sm">
+      <span class="text-slate-300">Grupo máximo con el que te sumas</span>
       <input
         type="number"
         min="1"
         max="20"
-        bind:value={capacity}
-        data-testid="capacity"
-        class="rounded-md border border-slate-600 bg-slate-900 px-3 py-2 text-base text-slate-100"
+        bind:value={maxGroupSize}
+        data-testid="max-group-size"
+        class="w-28 rounded-md border border-slate-600 bg-slate-900 px-3 py-2 text-base text-slate-100"
       />
     </label>
-  {:else}
-    <label class="flex items-center gap-2 text-sm text-slate-300">
-      <input type="checkbox" bind:checked={noGroupCap} data-testid="no-group-cap" />
-      No me importa el tamaño del grupo
-    </label>
-    {#if !noGroupCap}
-      <label class="flex flex-col gap-1 text-sm">
-        <span class="text-slate-300">Grupo máximo con el que te sumas</span>
-        <input
-          type="number"
-          min="1"
-          max="20"
-          bind:value={maxGroupSize}
-          data-testid="max-group-size"
-          class="rounded-md border border-slate-600 bg-slate-900 px-3 py-2 text-base text-slate-100"
-        />
-      </label>
-    {/if}
   {/if}
+{/if}
 
-  <button
-    type="submit"
-    disabled={pending}
-    data-testid="add-availability"
-    class="rounded-full bg-gradient-to-r from-indigo-500 to-cyan-400 px-4 py-3 text-sm font-semibold text-white shadow-md disabled:opacity-50"
-  >
-    {pending ? "Guardando…" : "Agregar disponibilidad"}
-  </button>
-</form>
+<div
+  bind:this={gridEl}
+  class="mb-4 max-h-96 overflow-y-auto overflow-x-auto rounded-xl border border-slate-700"
+  data-testid="availability-grid"
+>
+  <div class="grid" style="grid-template-columns: 3rem repeat(7, minmax(2.25rem, 1fr));">
+    <div class="sticky top-0 z-10 bg-slate-900"></div>
+    {#each WEEKDAYS as w (w)}
+      <div class="sticky top-0 z-10 bg-slate-900 py-1 text-center text-xs font-semibold text-slate-300">
+        {WEEKDAY_SHORT_ES[w]}
+      </div>
+    {/each}
+    {#each HOURS as h (h)}
+      <div
+        class="flex items-center justify-end pr-1 text-[10px] text-slate-500"
+        style="height: {CELL_HEIGHT_PX}px;"
+      >
+        {String(h).padStart(2, "0")}
+      </div>
+      {#each WEEKDAYS as w (w)}
+        {@const key = cellKey(w, h)}
+        <button
+          type="button"
+          aria-label="{dayLabel(w)} {h}:00"
+          aria-pressed={selected.has(key)}
+          data-testid="cell-{key}"
+          class="border border-slate-800 transition-colors
+                 {selected.has(key)
+                   ? 'bg-gradient-to-br from-indigo-500 to-cyan-400'
+                   : 'bg-slate-800/40 hover:bg-slate-700/60'}"
+          style="height: {CELL_HEIGHT_PX}px;"
+          on:click={() => toggleCell(w, h)}
+        ></button>
+      {/each}
+    {/each}
+  </div>
+</div>
+
+<button
+  type="button"
+  disabled={saving || selectionToRanges().length === 0}
+  data-testid="save-availability"
+  class="mb-8 w-full rounded-full bg-gradient-to-r from-indigo-500 to-cyan-400 px-4 py-3 text-sm font-semibold text-white shadow-md disabled:opacity-50"
+  on:click={save}
+>
+  {saving ? "Guardando…" : "Guardar disponibilidad"}
+</button>
 
 <h2 class="mb-3 text-sm font-semibold uppercase tracking-wide text-slate-400">Tu semana</h2>
 
@@ -231,7 +284,7 @@
         <span>
           <strong class="text-slate-100">{a.role === "host" ? "Host" : "Jugador"}</strong>
           <span class="text-slate-400">
-            · {dayLabel(a.weekday)} {slotLabel(a.time_slot)}
+            · {dayLabel(a.weekday)} {formatHourRange(a.start_hour, a.end_hour)}
             {#if a.role === "host" && a.capacity}
               · hasta {a.capacity}
             {:else if a.role === "player" && a.max_group_size}

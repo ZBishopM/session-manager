@@ -55,7 +55,8 @@ function runWeeklyMatchmaker() {
     player: r.get("player"),
     role: r.get("role"),
     weekday: r.get("weekday"),
-    time_slot: r.get("time_slot"),
+    start_hour: r.get("start_hour"),
+    end_hour: r.get("end_hour"),
     capacity: r.get("capacity") || undefined,
     max_group_size: r.get("max_group_size") || undefined,
   }));
@@ -83,7 +84,8 @@ function runWeeklyMatchmaker() {
 
     const proposal = new Record(proposalsColl);
     proposal.set("weekday", group.weekday);
-    proposal.set("time_slot", group.time_slot);
+    proposal.set("start_hour", group.start_hour);
+    proposal.set("end_hour", group.end_hour);
     proposal.set("proposed_date", proposedDateIso);
     proposal.set("host", group.host);
     proposal.set("status", "proposed");
@@ -111,7 +113,7 @@ function runWeeklyMatchmaker() {
 
     if (webhookUrl && recipients.length > 0) {
       const message = core.buildDiscordMessage(
-        { hostNickname: hostPlayer.get("nickname"), weekday: group.weekday, timeSlot: group.time_slot },
+        { hostNickname: hostPlayer.get("nickname"), weekday: group.weekday, startHour: group.start_hour, endHour: group.end_hour },
         recipients,
       );
       try {
@@ -131,7 +133,7 @@ function runWeeklyMatchmaker() {
       for (const recipient of recipients) {
         if (!recipient.email) continue;
         const email = core.buildInviteEmail(
-          { hostNickname: hostPlayer.get("nickname"), weekday: group.weekday, timeSlot: group.time_slot },
+          { hostNickname: hostPlayer.get("nickname"), weekday: group.weekday, startHour: group.start_hour, endHour: group.end_hour },
           recipient,
         );
         try {

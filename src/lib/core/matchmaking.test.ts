@@ -2,14 +2,15 @@ import { describe, expect, it } from "vitest";
 import {
   groupAvailabilities,
   weekdayLabelEs,
-  timeSlotLabelEs,
+  formatHourRange,
   type AvailabilityInput,
 } from "./matchmaking.js";
 
 function avail(over: Partial<AvailabilityInput> & Pick<AvailabilityInput, "id" | "player" | "role">): AvailabilityInput {
   return {
     weekday: "sat",
-    time_slot: "afternoon",
+    start_hour: 18,
+    end_hour: 22,
     ...over,
   };
 }
@@ -32,8 +33,43 @@ describe("groupAvailabilities", () => {
     ];
     const groups = groupAvailabilities(rows);
     expect(groups).toEqual([
-      { host: "h1", weekday: "sat", time_slot: "afternoon", players: ["p1"] },
+      { host: "h1", weekday: "sat", start_hour: 18, end_hour: 22, players: ["p1"] },
     ]);
+  });
+
+  it("matches when overlap is at least 3 hours", () => {
+    // host 18-22, player 19-23 -> overlap = min(22,23) - max(18,19) = 3
+    const rows = [
+      avail({ id: "1", player: "h1", role: "host", capacity: 4 }),
+      avail({ id: "2", player: "p1", role: "player", start_hour: 19, end_hour: 23 }),
+    ];
+    const groups = groupAvailabilities(rows);
+    expect(groups[0]!.players).toEqual(["p1"]);
+  });
+
+  it("excludes a player whose overlap is under 3 hours", () => {
+    // host 18-22, player 20-22 -> overlap = min(22,22) - max(18,20) = 2
+    const rows = [
+      avail({ id: "1", player: "h1", role: "host", capacity: 4 }),
+      avail({ id: "2", player: "p1", role: "player", start_hour: 20, end_hour: 22 }),
+    ];
+    expect(groupAvailabilities(rows)).toEqual([]);
+  });
+
+  it("excludes a player whose range only touches the host's (zero overlap)", () => {
+    const rows = [
+      avail({ id: "1", player: "h1", role: "host", capacity: 4 }),
+      avail({ id: "2", player: "p1", role: "player", start_hour: 22, end_hour: 24 }),
+    ];
+    expect(groupAvailabilities(rows)).toEqual([]);
+  });
+
+  it("excludes a player whose range is fully disjoint from the host's", () => {
+    const rows = [
+      avail({ id: "1", player: "h1", role: "host", capacity: 4 }),
+      avail({ id: "2", player: "p1", role: "player", start_hour: 23, end_hour: 24 }),
+    ];
+    expect(groupAvailabilities(rows)).toEqual([]);
   });
 
   it("stops assigning once host capacity is reached", () => {
@@ -59,7 +95,7 @@ describe("groupAvailabilities", () => {
     // p1 joins first (group size 2, fine for p2's cap check at that point:
     // adding p2 would make it 3 > 2, so p2 gets excluded).
     expect(groups).toEqual([
-      { host: "h1", weekday: "sat", time_slot: "afternoon", players: ["p1"] },
+      { host: "h1", weekday: "sat", start_hour: 18, end_hour: 22, players: ["p1"] },
     ]);
   });
 
@@ -74,7 +110,7 @@ describe("groupAvailabilities", () => {
     expect(groups[0]!.players).toEqual(["p1", "p2", "p3"]);
   });
 
-  it("does not double-assign a player to two hosts in the same slot, and prefers higher-capacity hosts first", () => {
+  it("does not double-assign a player to two hosts the same weekday, and prefers higher-capacity hosts first", () => {
     const rows = [
       avail({ id: "1", player: "h1", role: "host", capacity: 5 }),
       avail({ id: "2", player: "h2", role: "host", capacity: 1 }),
@@ -86,19 +122,19 @@ describe("groupAvailabilities", () => {
     expect(groups[0]!.players).toEqual(["p1"]);
   });
 
-  it("keeps different weekday/time_slot combinations independent", () => {
+  it("keeps different weekdays independent", () => {
     const rows = [
-      avail({ id: "1", player: "h1", role: "host", capacity: 1, weekday: "sat", time_slot: "afternoon" }),
-      avail({ id: "2", player: "p1", role: "player", weekday: "sat", time_slot: "afternoon" }),
-      avail({ id: "3", player: "h1", role: "host", capacity: 1, weekday: "sun", time_slot: "evening" }),
-      avail({ id: "4", player: "p1", role: "player", weekday: "sun", time_slot: "evening" }),
+      avail({ id: "1", player: "h1", role: "host", capacity: 1, weekday: "sat" }),
+      avail({ id: "2", player: "p1", role: "player", weekday: "sat" }),
+      avail({ id: "3", player: "h1", role: "host", capacity: 1, weekday: "sun" }),
+      avail({ id: "4", player: "p1", role: "player", weekday: "sun" }),
     ];
     const groups = groupAvailabilities(rows);
     expect(groups).toHaveLength(2);
-    expect(groups.map((g) => g.time_slot).sort()).toEqual(["afternoon", "evening"]);
+    expect(groups.map((g) => g.weekday).sort()).toEqual(["sat", "sun"]);
   });
 
-  it("a host never gets matched with themself posting as a player in the same slot", () => {
+  it("a host never gets matched with themself posting as a player the same weekday", () => {
     const rows = [
       avail({ id: "1", player: "h1", role: "host", capacity: 4 }),
       avail({ id: "2", player: "h1", role: "player" }),
@@ -117,19 +153,27 @@ describe("groupAvailabilities", () => {
   });
 });
 
-describe("weekdayLabelEs / timeSlotLabelEs", () => {
+describe("weekdayLabelEs", () => {
   it("translates every known value", () => {
     expect(weekdayLabelEs("sat")).toBe("sábado");
-    expect(timeSlotLabelEs("night")).toBe("madrugada");
   });
 
-  // Generated record types widen these fields to include "" (see the
-  // comment above weekdayLabelEs/timeSlotLabelEs in matchmaking.ts) even
-  // though they're required and never actually empty at runtime — these
-  // must not throw on that case.
+  // Generated record types widen this field to include "" (see the
+  // comment above weekdayLabelEs in matchmaking.ts) even though it's
+  // required and never actually empty at runtime — must not throw.
   it("falls back to the raw value for an empty or unknown string", () => {
     expect(weekdayLabelEs("")).toBe("");
-    expect(timeSlotLabelEs("")).toBe("");
     expect(weekdayLabelEs("nope")).toBe("nope");
+  });
+});
+
+describe("formatHourRange", () => {
+  it("zero-pads and formats a range", () => {
+    expect(formatHourRange(18, 23)).toBe("18:00–23:00");
+    expect(formatHourRange(9, 12)).toBe("09:00–12:00");
+  });
+
+  it("wraps end_hour of 24 to 00", () => {
+    expect(formatHourRange(22, 24)).toBe("22:00–00:00");
   });
 });
