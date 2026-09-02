@@ -34,6 +34,11 @@ Thumbs.db
 # PocketBase binary cache for integration tests
 .pocketbase
 
+# Playwright E2E output
+/test-results/
+/playwright-report/
+/blob-report/
+
 # Logs
 *.log
 npm-debug.log*

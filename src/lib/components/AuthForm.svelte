@@ -14,11 +14,19 @@
   const modes: AuthMode[] = ["login", "signup"];
   let nickname = "";
   let passcode = "";
+  let passcodeTouched = false;
 
   $: trimmedNick = nickname.trim();
   $: nicknameOk = trimmedNick.length >= 2 && trimmedNick.length <= 24;
   $: passcodeOk = /^\d{4}$/.test(passcode);
   $: canSubmit = nicknameOk && passcodeOk && !pending;
+  // "new-password" (not "current-password") in signup mode: a browser/
+  // password manager only ever offers to *fill* a field marked
+  // current-password, and it'll happily offer a saved password from a
+  // totally different site — which then fails the 4-digit pattern check
+  // with a confusing native "use the requested format" tooltip and no
+  // in-app explanation. This is the actual bug behind that report.
+  $: passcodeAutocomplete = mode === "signup" ? "new-password" : "current-password";
 
   function setMode(next: AuthMode): void {
     if (mode === next) return;
@@ -27,14 +35,25 @@
     dispatch("mode-change", { mode });
   }
 
+  // Sanitize on every input rather than trusting the native pattern/
+  // maxlength alone — those don't stop a password manager (or a paste)
+  // from putting a non-numeric or wrong-length value in the field; this
+  // keeps `passcode` (and so passcodeOk/canSubmit) honest regardless of
+  // how the value got there.
+  function handlePasscodeInput(e: Event): void {
+    const digitsOnly = (e.currentTarget as HTMLInputElement).value.replace(/\D/g, "").slice(0, 4);
+    passcode = digitsOnly;
+  }
+
   function submit(e: SubmitEvent): void {
     e.preventDefault();
+    passcodeTouched = true;
     if (!canSubmit) return;
     dispatch("submit", { nickname: trimmedNick, passcode, mode });
   }
 </script>
 
-<form class="flex flex-col gap-4" on:submit={submit}>
+<form class="flex flex-col gap-4" on:submit={submit} novalidate>
   <div
     class="grid grid-cols-2 rounded-full bg-slate-800 p-1 text-sm"
     role="tablist"
@@ -76,12 +95,17 @@
       inputmode="numeric"
       pattern="\d{4}"
       maxlength="4"
-      bind:value={passcode}
+      value={passcode}
+      on:input={handlePasscodeInput}
+      on:blur={() => (passcodeTouched = true)}
       placeholder="••••"
-      autocomplete="current-password"
+      autocomplete={passcodeAutocomplete}
       data-testid="passcode"
       class="rounded-md border border-slate-600 bg-slate-900 px-3 py-2 text-center text-2xl tracking-[0.5em] text-slate-100 placeholder:text-slate-500 focus:border-cyan-300 focus:outline-none"
     />
+    {#if passcodeTouched && passcode.length > 0 && !passcodeOk}
+      <span class="text-xs text-rose-300" data-testid="passcode-hint">Tiene que ser exactamente 4 números.</span>
+    {/if}
   </label>
 
   {#if error}

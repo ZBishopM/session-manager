@@ -76,6 +76,7 @@ session-manager/
 | Verificación completa local | sigue [VERIFICATION.md](VERIFICATION.md) (5 minutos) |
 | Tests unit rápido | `npm test` |
 | Tests integration (descarga binario PB si falta) | `npm run test:integration` |
+| Tests E2E, navegador real (Playwright) | `npm run test:e2e` |
 | Type-check Svelte estricto | `npm run check` |
 | Type-check TS puro | `npm run typecheck` |
 | Build estático | `npm run build` |
@@ -88,7 +89,7 @@ session-manager/
 ### Añadir un campo a una colección
 1. Editar `src/lib/core/schema.ts`.
 2. `npm run build:migrations && npm run build:types`.
-3. **Para infra existente**: PocketBase NO migra automáticamente cambios de campos en una migración ya aplicada. Hay que crear una migración nueva (el generador actual solo emite la `init`). Para MVP simplemente borra `pb_data/data.db` en local y deja que se reaplique.
+3. **Para infra existente**: PocketBase NO migra automáticamente cambios de campos en una migración ya aplicada. Hay que crear una migración nueva. El generador (`build-migrations.ts`) soporta esto desde 2026-09-02: `1700000000_init.js` queda congelada a propósito (`INIT_COLLECTION_NAMES`, no cambia aunque `COLLECTIONS` crezca — ya está aplicada en prod), y una migración incremental nueva se agrega como un par `<TIMESTAMP>_<nombre>.js` + `write<Nombre>Migration()`, siguiendo el ejemplo de `writeMatchmakingMigration`. Para MVP en local simplemente borra `pb_data/data.db` y deja que se reaplique todo desde cero.
 4. `npm test` y `npm run test:integration`.
 
 ### Añadir un nuevo pb_hook
@@ -115,7 +116,7 @@ session-manager/
 4. **Re-roll consumible**: gastar `players.re_rolls` cuando ganó "aleatorio" para sortear de nuevo (lógica en `voting.ts` ya soporta el flag, falta UI).
 5. **Subida de imágenes de juegos**: `<input type="file">` en `/games/new` enviado al campo `image` de la colección.
 6. **PatternPad como input de auth**: actualmente `AuthForm` usa input numérico; sustituir por `<PatternPad />` cuando el patrón está habilitado.
-7. **Migraciones incrementales**: `scripts/build-migrations.ts` solo emite la `init`. Para producción a futuro hace falta soportar deltas.
+7. ~~**Migraciones incrementales**~~ — resuelto 2026-09-02, ver "Añadir un campo a una colección" arriba.
 8. **Email/recovery**: el spec acepta no tener recovery (grupo cerrado). Si se necesita, habilitar `passwordAuth` con email opcional.
 
 ## Errores conocidos / pendientes de pulir
@@ -124,3 +125,4 @@ session-manager/
 - **Cleanup entre renders**: registrado en `vitest-setup.ts` (`afterEach(cleanup)`). Si ves "Found multiple elements", probablemente estás haciendo `rerender` — usa renders separados con `unmount()`.
 - **PWA no se actualiza al instante**: `registerType: "autoUpdate"` recarga al siguiente nav. Si quieres prompt manual, cambiar a `"prompt"` en `pwa-config.ts`.
 - **PB hooks no muestran logs en CI a menos que falle algo**: el harness los captura siempre. Para verlos en local: `PB_DEBUG=1 npm run test:integration`.
+- **E2E (Playwright) y la carrera de hidratación de SvelteKit**: SvelteKit renderiza el HTML inicial por SSR y luego hidrata en cliente. Un click de Playwright que llega antes de que la hidratación conecte los listeners no hace nada — pero pasa los checks de "actionability" de Playwright igual (el elemento existe, es visible, está habilitado), así que falla en silencio: el estado nunca cambia y no hay excepción que lo delate. Esto pasó de verdad armando `tests/e2e/auth.spec.ts` — parecía un bug real de la app (atascado en `/auth`) durante un rato. Mitigación: `page.waitForLoadState("networkidle")` después de cada `page.goto()`, antes de la primera interacción (ver `gotoAuth()` en ese archivo).

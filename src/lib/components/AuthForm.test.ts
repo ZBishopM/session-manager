@@ -87,4 +87,41 @@ describe("<AuthForm />", () => {
     await fillAndSubmit("A", "12");
     expect(onSubmit).not.toHaveBeenCalled();
   });
+
+  // Regression coverage for a real bug report: signup showed the browser's
+  // native pattern-mismatch tooltip ("usa el formato solicitado") instead
+  // of anything the app controls. Root cause was autocomplete="current-password"
+  // even in signup mode, which invites a password manager to autofill an
+  // unrelated saved password that then fails the 4-digit pattern.
+  it("uses new-password autocomplete in signup mode, current-password in login mode", async () => {
+    render(AuthForm);
+    expect(screen.getByTestId("passcode")).toHaveAttribute("autocomplete", "current-password");
+    await fireEvent.click(screen.getByTestId("mode-signup"));
+    expect(screen.getByTestId("passcode")).toHaveAttribute("autocomplete", "new-password");
+  });
+
+  it("strips non-digits and caps at 4 characters regardless of what's typed or pasted in", async () => {
+    render(AuthForm);
+    const input = screen.getByTestId("passcode") as HTMLInputElement;
+    await fireEvent.input(input, { target: { value: "12a3456" } });
+    expect(input.value).toBe("1234");
+  });
+
+  it("shows an in-app hint (not just relying on the native tooltip) once the field is touched and invalid", async () => {
+    render(AuthForm);
+    expect(screen.queryByTestId("passcode-hint")).not.toBeInTheDocument();
+    await fireEvent.input(screen.getByTestId("passcode"), { target: { value: "12" } });
+    await fireEvent.blur(screen.getByTestId("passcode"));
+    expect(screen.getByTestId("passcode-hint")).toBeInTheDocument();
+  });
+
+  it("does not show the hint before the field has been touched, even if empty", () => {
+    render(AuthForm);
+    expect(screen.queryByTestId("passcode-hint")).not.toBeInTheDocument();
+  });
+
+  it("disables native browser validation (novalidate) so all feedback is in-app and controlled", () => {
+    render(AuthForm);
+    expect(screen.getByTestId("submit").closest("form")).toHaveAttribute("novalidate");
+  });
 });

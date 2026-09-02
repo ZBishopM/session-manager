@@ -2,26 +2,26 @@
 
 What a real user can actually click through and do, grouped by area, each tagged with the version it showed up in. This is capability-oriented (what works), not commit-oriented — see `CHANGELOG.md` for the technical/commit history.
 
-**Versioning**: no formal releases exist yet, so this file uses simple `vN` markers of its own. `v1` = everything already on the live site (`gamesessions.danassistantassistant.website`) as of 2026-09-02. Later versions are session-manager work done since, most **not yet deployed** — each entry below says where it actually runs. Once something ships, this file gets the commit SHA added next to its version tag.
+**Versioning**: no formal releases exist yet, so this file uses simple `vN` markers of its own, each tagged with the commit that shipped it.
 
-## How to test each version
+**v1–v5 are all live** as of 2026-09-02 (commit `897d906`, deployed same day) — just use https://gamesessions.danassistantassistant.website, including from your phone.
 
-- **v1 (live)** — just use https://gamesessions.danassistantassistant.website.
-- **v2+ (not deployed yet)** — run locally:
-  ```
-  npm install
-  npm run build:migrations && npm run build:hooks && npm run build:types
-  # then run a local PocketBase (see docs/DEPLOYMENT.md §4-6) with pb_hooks/ and
-  # pb_migrations/ from this checkout, and separately:
-  npm run dev
-  ```
-  Or simpler for a quick look at just the PocketBase side: `npm run test:integration` spins up a real local PocketBase against the current schema/hooks (not the frontend, but confirms the backend is sound).
+To run a not-yet-deployed change locally instead:
+```
+npm install
+npm run build:migrations && npm run build:hooks && npm run build:types
+# then run a local PocketBase (see docs/DEPLOYMENT.md §4-6) with pb_hooks/ and
+# pb_migrations/ from this checkout, and separately:
+npm run dev
+```
+Or simpler for a quick look at just the PocketBase side: `npm run test:integration` spins up a real local PocketBase against the current schema/hooks (not the frontend, but confirms the backend is sound). `npm run test:e2e` goes one further: a real Chromium browser driven by Playwright against a real local PocketBase — the only layer that catches bugs involving actual browser behavior (autofill, native form validation, real navigation), which is exactly the class of bug in the fix right below.
 
 ---
 
 ## Account
 
 - [x] **v1** — Sign up: nickname (2–24 chars, unique) + 4-digit passcode. `/auth`.
+- [x] **v6 (live, `<pending commit>`)** — **Bug fix.** Signup could fail with the browser's own native "usa el formato solicitado" (pattern-mismatch) message instead of anything the app controls. Root cause: the passcode field was `autocomplete="current-password"` even during signup — a password manager reading that attribute will happily offer to autofill an unrelated *saved* password from some other site, which then fails the 4-digit check. Fixed: `new-password` autocomplete in signup mode, all native browser validation disabled (`novalidate`) in favor of the app's own in-app hint, and the passcode value is sanitized on every keystroke (strips non-digits, caps at 4) so it can't drift regardless of how a value got typed, pasted, or autofilled in. Covered by both a component test (`AuthForm.test.ts`) and, for the first time in this repo, a real-browser E2E test (`tests/e2e/auth.spec.ts`, `npm run test:e2e`) that actually signs up, logs out, and logs back in against a real local PocketBase.
 - [x] **v1** — Log in with nickname + passcode. `/auth`.
 - [x] **v1** — Log out. `/profile`.
 - [x] **v1** — View profile: nickname, level, XP bar, re-rolls count. `/profile`.
@@ -38,18 +38,18 @@ What a real user can actually click through and do, grouped by area, each tagged
 
 - [x] **v1** — Host creates a session: tap "Iniciar sesión" from the home screen → generates a session + a QR code + a join link. `/host`.
 - [x] **v1** — Session console shows the lobby (status, participant count). `/session/[id]`.
-- [x] **v2 (not deployed — local only)** — **Actually starting play.** Before this, a session could never leave "created" status — there was no button anywhere to advance it. Now: once at least one player has joined, the host sees "Iniciar sesión" on `/session/[id]`, which creates the first match and flips the session to `active`.
+- [x] **v2 (live, 897d906)** — **Actually starting play.** Before this, a session could never leave "created" status — there was no button anywhere to advance it. Now: once at least one player has joined, the host sees "Iniciar sesión" on `/session/[id]`, which creates the first match and flips the session to `active`.
 
 ## Joining a session
 
 - [x] **v1** — Open a join link / scan a QR → resolves to the session and shows the lobby (status, participant count). `/join/[token]`.
   - **Known broken in v1** (live site today): the "Entrar a la sesión" button does nothing — no click handler existed. Scanning a QR gets you a read-only preview, not an actual join.
-- [x] **v2 (not deployed — local only)** — **Joining actually works now.** Tapping "Entrar a la sesión" creates a real participant record. If you're not logged in yet, it sends you to `/auth` first and brings you right back to finish joining afterward (works from `/join/[token]` or `/session/[id]` either way — same button, same behavior on both routes).
+- [x] **v2 (live, 897d906)** — **Joining actually works now.** Tapping "Entrar a la sesión" creates a real participant record. If you're not logged in yet, it sends you to `/auth` first and brings you right back to finish joining afterward (works from `/join/[token]` or `/session/[id]` either way — same button, same behavior on both routes).
   - Also fixed: `session_participants`/`matches`/`votes` had superuser-only write permissions in the database itself — even a working button couldn't have joined anyone before this. Real players can now write to their own rows in all three.
 
 ## Weekly matchmaking — setting your availability
 
-- [x] **v3 (not deployed — local only)** — **New.** Set your standing weekly host/player availability. `/availability` (linked from `/profile`).
+- [x] **v3 (live, 897d906)** — **New.** Set your standing weekly host/player availability. `/availability` (linked from `/profile`).
   - Pick a role (Host / Jugador), a weekday, and a time slot (morning/afternoon/evening/night).
   - As host: set how many people you can receive.
   - As player: optionally cap the max group size you're willing to join ("no me importa" is the default — no cap).
@@ -58,31 +58,31 @@ What a real user can actually click through and do, grouped by area, each tagged
 
 ## Weekly matchmaking — the actual matching + notification
 
-- [x] **v3 (not deployed — backend only, no UI trigger)** — **New.** Every Sunday 18:00, a cron job (`pb_hooks/weekly_matchmaker.pb.js`) reads everyone's `/availability` rows, groups compatible host+player combinations per day/slot (host capacity and player group-size caps both respected — pure algorithm in `src/lib/core/matchmaking.ts`, 12 unit tests), creates a proposal, and posts one message per proposal to Discord with a personal accept/decline link per invited player.
+- [x] **v3 (live, 897d906 — backend only, no UI trigger)** — **New.** Every Sunday 18:00, a cron job (`pb_hooks/weekly_matchmaker.pb.js`) reads everyone's `/availability` rows, groups compatible host+player combinations per day/slot (host capacity and player group-size caps both respected — pure algorithm in `src/lib/core/matchmaking.ts`, 12 unit tests), creates a proposal, and posts one message per proposal to Discord with a personal accept/decline link per invited player.
   - **To test locally**: needs `DISCORD_WEBHOOK_URL` (a Discord channel webhook — same kind in_out already uses) and `PUBLIC_URL` (e.g. `http://localhost:5173`) set as env vars for the local PocketBase process. The cron won't fire until Sunday 18:00 by default — for a quick manual test, temporarily change the schedule string in `weekly_matchmaker.pb.js`'s `cronAdd("weekly-matchmaker", "0 18 * * 0", ...)` to `"* * * * *"` (every minute) and watch the Discord channel + stdout for `[weekly_matchmaker]` lines. Revert the schedule before committing.
 
 ## Weekly matchmaking — responding to an invite
 
-- [x] **v4 (not deployed — local only)** — **New.** Open the link a Discord invite message posted. `/invite/[token]`.
+- [x] **v4 (live, 897d906)** — **New.** Open the link a Discord invite message posted. `/invite/[token]`.
   - No login needed — the opaque token is the access grant (same idea as `sessions.qr_token`).
   - Shows who's hosting and when ("**ana** puede hostear sábado a la tarde — ¿te sumás?"), with **Acepto** / **No puedo** buttons.
   - Once you respond, the buttons are replaced by your answer — re-opening the same link later shows what you already said instead of letting you change it. (There's no "change my mind" flow yet — decline then re-accept isn't possible through the UI.)
 
 ## Weekly matchmaking — seeing all your invites in one place
 
-- [x] **v5 (not deployed — local only)** — **New.** `/profile` → "Mis invitaciones" → `/invites` (auth-guarded — this one needs login, unlike `/invite/[token]`, since it lists *all* of your invites rather than resolving one specific token).
+- [x] **v5 (live, 897d906)** — **New.** `/profile` → "Mis invitaciones" → `/invites` (auth-guarded — this one needs login, unlike `/invite/[token]`, since it lists *all* of your invites rather than resolving one specific token).
   - Split into "Pendientes" (with the same Acepto/No puedo buttons, answerable right there — no need to dig up the original Discord link) and "Respondidas" (read-only history of what you already said).
   - Same underlying accept/decline write as `/invite/[token]` — this page just reads the token off your own invite record instead of it coming from the URL.
 
 ## Weekly matchmaking — host converts an accepted proposal into a real session
 
-- [x] **v4 (not deployed — local only)** — **New.** `/profile` → "Mis propuestas de la semana" → `/proposals`.
+- [x] **v4 (live, 897d906)** — **New.** `/profile` → "Mis propuestas de la semana" → `/proposals`.
   - Lists your own proposals (as host) that are still open, each showing every invited player and their response (✓ acepta / no puede / esperando…).
   - "Crear sesión y mostrar QR" is disabled until at least one person has accepted. Clicking it creates a real session (same as `/host`'s "Crear sesión") and takes you straight to `/session/[id]` with the QR up — from there it's the exact same in-person gathering flow as v2 (players still scan the QR to actually join; accepting the invite online doesn't auto-join them — that's deliberate, the QR scan is what confirms someone actually showed up).
 
 ## Picking what to play
 
-- [x] **v2 (not deployed — local only)** — **Entirely new in v2 — didn't exist at all before.** Once the host starts the session, every joined player sees a game-voting screen (radio-button style, one game per row + a 🎲 "Aleatorio" option). Games shown are filtered to ones whose min/max player count fits how many people actually joined.
+- [x] **v2 (live, 897d906)** — **Entirely new in v2 — didn't exist at all before.** Once the host starts the session, every joined player sees a game-voting screen (radio-button style, one game per row + a 🎲 "Aleatorio" option). Games shown are filtered to ones whose min/max player count fits how many people actually joined.
   - Once everyone who joined has voted, the pick resolves automatically: most votes wins; if "Aleatorio" wins, a random eligible game is drawn; **ties are broken by a random pick among the tied options** (not a host override — see "Not yet possible").
   - The resolved game then shows on `/session/[id]` for everyone instead of the voting screen.
 
