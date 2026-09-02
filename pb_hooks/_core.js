@@ -26,12 +26,16 @@ var hooks_entry_exports = {};
 __export(hooks_entry_exports, {
   ACHIEVEMENTS_MODEL_DEFAULT: () => ACHIEVEMENTS_MODEL_DEFAULT,
   RANDOM_VOTE: () => RANDOM_VOTE,
+  buildDiscordMessage: () => buildDiscordMessage,
   buildGeminiRequest: () => buildGeminiRequest,
   buildPrompt: () => buildPrompt,
   computeMatchAwards: () => computeMatchAwards,
+  decideVotes: () => decideVotes,
   emptyStats: () => emptyStats,
   evaluateTrigger: () => evaluateTrigger,
   extractGeminiText: () => extractGeminiText,
+  generateInviteToken: () => generateInviteToken,
+  groupAvailabilities: () => groupAvailabilities,
   levelFromXp: () => levelFromXp,
   parseAchievements: () => parseAchievements,
   progressToNextLevel: () => progressToNextLevel,
@@ -454,4 +458,96 @@ function resolveVotes(votes, eligibleGameIds, rand = Math.random) {
     return { kind: "chosen", gameId: winner };
   }
   return { kind: "tie", candidates: topOptions };
+}
+function decideVotes(votes, eligibleGameIds, rand = Math.random) {
+  const result = resolveVotes(votes, eligibleGameIds, rand);
+  if (result.kind === "chosen" || result.kind === "random") return result;
+  if (result.kind === "no_votes") return result;
+  const pick = result.candidates[Math.floor(rand() * result.candidates.length)];
+  if (pick === RANDOM_VOTE) {
+    if (eligibleGameIds.length === 0) return { kind: "no_votes" };
+    const idx = Math.floor(rand() * eligibleGameIds.length);
+    return { kind: "random", gameId: eligibleGameIds[idx] };
+  }
+  return { kind: "chosen", gameId: pick };
+}
+
+// src/lib/core/matchmaking.ts
+var WEEKDAY_LABEL_ES = {
+  mon: "lunes",
+  tue: "martes",
+  wed: "mi\xE9rcoles",
+  thu: "jueves",
+  fri: "viernes",
+  sat: "s\xE1bado",
+  sun: "domingo"
+};
+var TIME_SLOT_LABEL_ES = {
+  morning: "ma\xF1ana",
+  afternoon: "tarde",
+  evening: "noche",
+  night: "madrugada"
+};
+function groupAvailabilities(availabilities) {
+  const bySlot = /* @__PURE__ */ new Map();
+  for (const a of availabilities) {
+    const key = `${a.weekday}|${a.time_slot}`;
+    const list = bySlot.get(key) ?? [];
+    list.push(a);
+    bySlot.set(key, list);
+  }
+  const groups = [];
+  for (const [, slotRows] of bySlot) {
+    const hosts = slotRows.filter((r) => r.role === "host").sort((a, b) => (b.capacity ?? 0) - (a.capacity ?? 0));
+    const players = slotRows.filter((r) => r.role === "player");
+    const claimed = /* @__PURE__ */ new Set();
+    for (const host of hosts) {
+      const capacity = host.capacity ?? Infinity;
+      const assigned = [];
+      for (const candidate of players) {
+        if (assigned.length >= capacity) break;
+        if (claimed.has(candidate.player)) continue;
+        if (candidate.player === host.player) continue;
+        const wouldBeGroupSize = 1 + assigned.length + 1;
+        const cap = candidate.max_group_size;
+        if (cap != null && wouldBeGroupSize > cap) continue;
+        assigned.push(candidate.player);
+        claimed.add(candidate.player);
+      }
+      if (assigned.length > 0) {
+        groups.push({
+          host: host.player,
+          weekday: host.weekday,
+          time_slot: host.time_slot,
+          players: assigned
+        });
+      }
+    }
+  }
+  return groups;
+}
+
+// src/lib/core/notify.ts
+var TOKEN_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+var TOKEN_LENGTH = 16;
+function generateInviteToken(random = Math.random) {
+  let token = "";
+  for (let i = 0; i < TOKEN_LENGTH; i++) {
+    token += TOKEN_ALPHABET[Math.floor(random() * TOKEN_ALPHABET.length)];
+  }
+  return token;
+}
+var SLOT_CONNECTOR_ES = {
+  morning: "a la",
+  afternoon: "a la",
+  evening: "a la",
+  night: "de"
+};
+function buildDiscordMessage(proposal, recipients) {
+  const when = `${WEEKDAY_LABEL_ES[proposal.weekday]} ${SLOT_CONNECTOR_ES[proposal.timeSlot]} ${TIME_SLOT_LABEL_ES[proposal.timeSlot]}`;
+  const lines = [
+    `\u{1F3B2} **${proposal.hostNickname}** puede hostear ${when} \u2014 \xBFjuegan?`,
+    ...recipients.map((r) => `\u2022 ${r.nickname}: ${r.url}`)
+  ];
+  return lines.join("\n");
 }

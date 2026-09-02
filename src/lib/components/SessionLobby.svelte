@@ -1,10 +1,15 @@
 <script lang="ts">
+  import { createEventDispatcher } from "svelte";
   import type { SessionsRecord } from "$core/records.js";
 
   export let session: SessionsRecord | null;
   export let participantCount: number = 0;
   export let loading: boolean = false;
   export let error: string | null = null;
+  export let joined: boolean = false;
+  export let joining: boolean = false;
+
+  const dispatch = createEventDispatcher<{ join: void }>();
 
   $: statusLabel =
     session?.status === "created"
@@ -30,9 +35,19 @@
       <strong>{participantCount}</strong>
       <span>{participantCount === 1 ? "jugador" : "jugadores"} en la sala</span>
     </div>
-    <button class="join" type="button" data-testid="join">
-      Entrar a la sesión
-    </button>
+    {#if joined}
+      <p class="joined" data-testid="joined">Ya estás dentro ✓</p>
+    {:else}
+      <button
+        class="join"
+        type="button"
+        data-testid="join"
+        disabled={joining}
+        on:click={() => dispatch("join")}
+      >
+        {joining ? "Entrando…" : "Entrar a la sesión"}
+      </button>
+    {/if}
   {:else}
     <p class="state" data-testid="state-empty">No se encontró la sesión.</p>
   {/if}
@@ -86,6 +101,16 @@
     font-weight: 600;
     font-size: 0.95rem;
     cursor: pointer;
+  }
+  .join:disabled {
+    opacity: 0.6;
+    cursor: default;
+  }
+  .joined {
+    margin: 0.25rem 0 0;
+    color: #7dd3a7;
+    font-weight: 600;
+    font-size: 0.9rem;
   }
   .state {
     margin: 0;

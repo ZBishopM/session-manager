@@ -15,5 +15,7 @@ export {
   extractGeminiText,
   parseAchievements,
 } from "./achievement-generator.js";
-export { resolveVotes, RANDOM_VOTE } from "./voting.js";
+export { resolveVotes, decideVotes, RANDOM_VOTE } from "./voting.js";
 export { levelFromXp, progressToNextLevel, xpForAction } from "./xp.js";
+export { groupAvailabilities } from "./matchmaking.js";
+export { buildDiscordMessage, generateInviteToken } from "./notify.js";

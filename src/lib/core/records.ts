@@ -92,6 +92,39 @@ export interface PlayerAchievementsRecord extends BaseRecord {
   unlocked_at: string;
 }
 
+export interface AvailabilitiesRecord extends BaseRecord {
+  player: string;
+  role: "host" | "player" | "";
+  weekday: "mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun" | "";
+  time_slot: "morning" | "afternoon" | "evening" | "night" | "";
+  capacity?: number;
+  max_group_size?: number;
+}
+
+export interface MatchProposalsRecord extends BaseRecord {
+  weekday: "mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun" | "";
+  time_slot: "morning" | "afternoon" | "evening" | "night" | "";
+  proposed_date: string;
+  host: string;
+  status: "proposed" | "confirmed" | "cancelled" | "expired" | "";
+  session?: string;
+}
+
+export interface InvitesRecord extends BaseRecord {
+  proposal: string;
+  player: string;
+  response: "pending" | "accepted" | "declined" | "";
+  invite_token: string;
+  responded_at?: string;
+}
+
+export interface PushSubscriptionsRecord extends BaseRecord {
+  player: string;
+  endpoint: string;
+  p256dh: string;
+  auth: string;
+}
+
 /** Maps a collection name to its strongly-typed record. */
 export interface CollectionRecordMap {
   categories: CategoriesRecord;
@@ -104,6 +137,10 @@ export interface CollectionRecordMap {
   match_players: MatchPlayersRecord;
   votes: VotesRecord;
   player_achievements: PlayerAchievementsRecord;
+  availabilities: AvailabilitiesRecord;
+  match_proposals: MatchProposalsRecord;
+  invites: InvitesRecord;
+  push_subscriptions: PushSubscriptionsRecord;
 }
 
 export type CollectionName = keyof CollectionRecordMap;

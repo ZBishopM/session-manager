@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { page } from "$app/stores";
   import { goto } from "$app/navigation";
   import AuthForm from "$lib/components/AuthForm.svelte";
   import type { AuthMode } from "$lib/components/AuthForm.types.js";
@@ -7,6 +8,17 @@
   let mode: AuthMode = "login";
   let pending = false;
   let error: string | null = null;
+
+  // Only ever follow an internal path (never an absolute/external URL) —
+  // this comes straight from a query param, so treat it as untrusted.
+  // "/" alone isn't enough: "//evil.com" also starts with "/" and browsers
+  // treat it as protocol-relative, so explicitly exclude that too.
+  $: next = isSafeNext($page.url.searchParams.get("next"));
+
+  function isSafeNext(value: string | null): string {
+    if (value && value.startsWith("/") && !value.startsWith("//")) return value;
+    return "/profile";
+  }
 
   async function handleSubmit(
     event: CustomEvent<{ nickname: string; passcode: string; mode: AuthMode }>,
@@ -17,7 +29,7 @@
       const { nickname, passcode, mode: m } = event.detail;
       if (m === "signup") await signup(nickname, passcode);
       else await login(nickname, passcode);
-      await goto("/profile");
+      await goto(next);
     } catch (err) {
       error = parseError(err);
     } finally {

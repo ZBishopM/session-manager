@@ -55,3 +55,32 @@ export function resolveVotes(
 
   return { kind: "tie", candidates: topOptions };
 }
+
+/**
+ * Same as resolveVotes, but never returns "tie" or "no_votes" — a tie is
+ * broken by a random pick among the tied candidates (falling through to
+ * the same random-eligible-game draw if RANDOM_VOTE is among them), and
+ * no_votes falls back to a random eligible game. BUSINESS_RULES.md says
+ * a tie should let the host decide manually; this is a deliberate MVP
+ * simplification (no host-override UI yet) so the gathering loop always
+ * lands on a game rather than getting stuck. Revisit if manual tie-break
+ * turns out to matter in practice.
+ */
+export function decideVotes(
+  votes: readonly Vote[],
+  eligibleGameIds: readonly string[],
+  rand: () => number = Math.random,
+): { kind: "chosen" | "random"; gameId: string } | { kind: "no_votes" } {
+  const result = resolveVotes(votes, eligibleGameIds, rand);
+  if (result.kind === "chosen" || result.kind === "random") return result;
+  if (result.kind === "no_votes") return result;
+
+  // tie
+  const pick = result.candidates[Math.floor(rand() * result.candidates.length)]!;
+  if (pick === RANDOM_VOTE) {
+    if (eligibleGameIds.length === 0) return { kind: "no_votes" };
+    const idx = Math.floor(rand() * eligibleGameIds.length);
+    return { kind: "random", gameId: eligibleGameIds[idx]! };
+  }
+  return { kind: "chosen", gameId: pick };
+}

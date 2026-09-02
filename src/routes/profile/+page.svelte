@@ -45,6 +45,30 @@
     </div>
     <XpBar xp={$user.xp ?? 0} />
   </section>
+
+  <div class="mt-4 flex flex-col gap-2">
+    <a
+      href="/availability"
+      class="flex flex-col gap-0.5 rounded-2xl bg-slate-800/70 p-4 text-slate-100 hover:bg-slate-800"
+    >
+      <p class="text-xs uppercase tracking-wide text-slate-400">Matchmaking</p>
+      <p class="text-base font-semibold">Mi disponibilidad semanal</p>
+    </a>
+    <a
+      href="/proposals"
+      class="flex flex-col gap-0.5 rounded-2xl bg-slate-800/70 p-4 text-slate-100 hover:bg-slate-800"
+    >
+      <p class="text-xs uppercase tracking-wide text-slate-400">Matchmaking</p>
+      <p class="text-base font-semibold">Mis propuestas de la semana</p>
+    </a>
+    <a
+      href="/invites"
+      class="flex flex-col gap-0.5 rounded-2xl bg-slate-800/70 p-4 text-slate-100 hover:bg-slate-800"
+    >
+      <p class="text-xs uppercase tracking-wide text-slate-400">Matchmaking</p>
+      <p class="text-base font-semibold">Mis invitaciones</p>
+    </a>
+  </div>
 {:else}
   <p class="text-sm text-slate-400">Cargando perfil…</p>
 {/if}

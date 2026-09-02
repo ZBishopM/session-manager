@@ -29,10 +29,52 @@ const INIT_OPTIONS: MigrationOptions = {
   name: "init",
 };
 
-export function buildInitMigration(
-  collections: readonly CollectionDef[] = COLLECTIONS,
+/**
+ * The exact collections `1700000000_init.js` covers. Frozen on purpose:
+ * that migration is already applied against prod, so its generated
+ * content must never change even as COLLECTIONS grows — PocketBase skips
+ * re-running a migration filename it's already recorded, so a mutated
+ * init.js wouldn't reach prod anyway, it'd just silently diverge from
+ * what's actually applied there. New collections get their own
+ * incremental migration (see MATCHMAKING_OPTIONS below) instead of
+ * being folded in here.
+ */
+const INIT_COLLECTION_NAMES = [
+  "categories",
+  "players",
+  "games",
+  "achievements",
+  "sessions",
+  "session_participants",
+  "matches",
+  "match_players",
+  "votes",
+  "player_achievements",
+] as const;
+
+const MATCHMAKING_OPTIONS: MigrationOptions = {
+  timestamp: 1735689600,
+  name: "matchmaking",
+};
+
+const MATCHMAKING_COLLECTION_NAMES = [
+  "availabilities",
+  "match_proposals",
+  "invites",
+  "push_subscriptions",
+] as const;
+
+/**
+ * Build a migration that creates exactly `toCreate`, validating relation
+ * targets against the fuller `allCollections` (so e.g. a new collection
+ * relating to `players` type-checks without `players` itself needing to
+ * be re-created by this same migration).
+ */
+export function buildMigration(
+  toCreate: readonly CollectionDef[],
+  allCollections: readonly CollectionDef[],
 ): string {
-  const errors = validateSchema(collections);
+  const errors = validateSchema(allCollections);
   if (errors.length > 0) {
     throw new Error(
       "Schema validation failed:\n" +
@@ -40,7 +82,7 @@ export function buildInitMigration(
     );
   }
 
-  const payload = collections.map((c) => collectionToJson(c));
+  const payload = toCreate.map((c) => collectionToJson(c));
   const json = JSON.stringify(payload, null, 2);
 
   return [
@@ -57,7 +99,7 @@ export function buildInitMigration(
     "  },",
     "  (app) => {",
     `    const names = ${JSON.stringify(
-      [...collections].map((c) => c.name).reverse(),
+      [...toCreate].map((c) => c.name).reverse(),
     )};`,
     "    for (const name of names) {",
     "      try {",
@@ -69,6 +111,20 @@ export function buildInitMigration(
     ");",
     "",
   ].join("\n");
+}
+
+export function buildInitMigration(
+  collections: readonly CollectionDef[] = COLLECTIONS,
+): string {
+  return buildMigration(collections, collections);
+}
+
+export function buildMatchmakingMigration(
+  allCollections: readonly CollectionDef[] = COLLECTIONS,
+): string {
+  const names: readonly string[] = MATCHMAKING_COLLECTION_NAMES;
+  const toCreate = allCollections.filter((c) => names.includes(c.name));
+  return buildMigration(toCreate, allCollections);
 }
 
 function collectionToJson(c: CollectionDef): Record<string, unknown> {
@@ -338,7 +394,9 @@ function repoRoot(): string {
 
 export function writeInitMigration(
   opts: MigrationOptions = INIT_OPTIONS,
-  collections: readonly CollectionDef[] = COLLECTIONS,
+  collections: readonly CollectionDef[] = COLLECTIONS.filter((c) =>
+    (INIT_COLLECTION_NAMES as readonly string[]).includes(c.name),
+  ),
 ): { path: string; contents: string; changed: boolean } {
   const root = repoRoot();
   const dir = join(root, "pb_migrations");
@@ -358,13 +416,36 @@ export function writeInitMigration(
   return { path, contents, changed: true };
 }
 
+export function writeMatchmakingMigration(
+  opts: MigrationOptions = MATCHMAKING_OPTIONS,
+  allCollections: readonly CollectionDef[] = COLLECTIONS,
+): { path: string; contents: string; changed: boolean } {
+  const root = repoRoot();
+  const dir = join(root, "pb_migrations");
+  mkdirSync(dir, { recursive: true });
+  const path = join(dir, migrationFilename(opts));
+  const contents = buildMatchmakingMigration(allCollections);
+  let previous = "";
+  try {
+    previous = readFileSync(path, "utf8");
+  } catch {
+    // first run
+  }
+  if (previous === contents) {
+    return { path, contents, changed: false };
+  }
+  writeFileSync(path, contents, "utf8");
+  return { path, contents, changed: true };
+}
+
 const isMain = process.argv[1] === fileURLToPath(import.meta.url);
 if (isMain) {
-  const result = writeInitMigration();
-  const rel = result.path.replace(repoRoot() + "\\", "").replace(repoRoot() + "/", "");
-  if (result.changed) {
-    console.log(`[build-migrations] wrote ${rel}`);
-  } else {
-    console.log(`[build-migrations] no changes: ${rel}`);
+  for (const result of [writeInitMigration(), writeMatchmakingMigration()]) {
+    const rel = result.path.replace(repoRoot() + "\\", "").replace(repoRoot() + "/", "");
+    if (result.changed) {
+      console.log(`[build-migrations] wrote ${rel}`);
+    } else {
+      console.log(`[build-migrations] no changes: ${rel}`);
+    }
   }
 }

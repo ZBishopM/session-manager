@@ -182,6 +182,14 @@ export const COLLECTIONS: readonly CollectionDef[] = [
     ],
     listRule: "",
     viewRule: "",
+    // createRule/updateRule/deleteRule are unset here (-> null, superuser
+    // only) because this collection belongs to the frozen init migration
+    // (see INIT_COLLECTION_NAMES in build-migrations.ts) — this file must
+    // keep generating that migration's exact original content. The real,
+    // current createRule ("player = @request.auth.id") was added later by
+    // pb_migrations/1735689601_matchmaking_rules.js, hand-written outside
+    // this generator. Treat that migration as the source of truth for
+    // this collection's actual rules, not the block below.
   },
 
   {
@@ -198,6 +206,9 @@ export const COLLECTIONS: readonly CollectionDef[] = [
     ],
     listRule: "",
     viewRule: "",
+    // Same note as session_participants above: real createRule
+    // ('@request.auth.id != "" && session.host = @request.auth.id') is
+    // set by pb_migrations/1735689601_matchmaking_rules.js, not here.
   },
 
   {
@@ -231,6 +242,9 @@ export const COLLECTIONS: readonly CollectionDef[] = [
     ],
     listRule: "",
     viewRule: "",
+    // Same note as session_participants above: real createRule/updateRule
+    // ("player = @request.auth.id") are set by
+    // pb_migrations/1735689601_matchmaking_rules.js, not here.
   },
 
   {
@@ -246,6 +260,105 @@ export const COLLECTIONS: readonly CollectionDef[] = [
     ],
     listRule: "",
     viewRule: "",
+  },
+
+  // --- Weekly matchmaking (added 2026-09-02) ---------------------------
+  // Standing weekly host/player availability, independent of any one
+  // session. A player can post either or both roles per weekday+slot.
+  {
+    name: "availabilities",
+    type: "base",
+    fields: [
+      { name: "player", type: "relation", relationTo: "players", maxSelect: 1, required: true },
+      { name: "role", type: "select", required: true, maxSelect: 1, options: ["host", "player"] },
+      { name: "weekday", type: "select", required: true, maxSelect: 1, options: ["mon", "tue", "wed", "thu", "fri", "sat", "sun"] },
+      { name: "time_slot", type: "select", required: true, maxSelect: 1, options: ["morning", "afternoon", "evening", "night"] },
+      // Host rows only: max attendees they can host. Player rows only:
+      // max group size they're willing to join; null = no preference.
+      { name: "capacity", type: "number", min: 1 },
+      { name: "max_group_size", type: "number", min: 1 },
+    ],
+    indexes: [
+      "CREATE UNIQUE INDEX idx_avail_player_role_slot ON availabilities (player, role, weekday, time_slot)",
+    ],
+    listRule: "",
+    viewRule: "",
+    createRule: "player = @request.auth.id",
+    updateRule: "player = @request.auth.id",
+    deleteRule: "player = @request.auth.id",
+  },
+
+  // The weekly cron's output: one row per (host, weekday, time_slot) it
+  // matched this week. Created only by the matchmaker hook (createRule
+  // null — $app.save() in a hook bypasses API rules entirely); the host
+  // can update their own proposal client-side to confirm it once enough
+  // players accept.
+  {
+    name: "match_proposals",
+    type: "base",
+    fields: [
+      { name: "weekday", type: "select", required: true, maxSelect: 1, options: ["mon", "tue", "wed", "thu", "fri", "sat", "sun"] },
+      { name: "time_slot", type: "select", required: true, maxSelect: 1, options: ["morning", "afternoon", "evening", "night"] },
+      { name: "proposed_date", type: "date", required: true },
+      { name: "host", type: "relation", relationTo: "players", maxSelect: 1, required: true },
+      { name: "status", type: "select", required: true, maxSelect: 1, options: ["proposed", "confirmed", "cancelled", "expired"] },
+      { name: "session", type: "relation", relationTo: "sessions", maxSelect: 1 },
+    ],
+    listRule: "",
+    viewRule: "",
+    createRule: null,
+    updateRule: "host = @request.auth.id",
+    deleteRule: null,
+  },
+
+  // One row per player invited into a proposal. `invite_token` mirrors
+  // `sessions.qr_token`'s shape — an opaque token so a not-yet-logged-in
+  // recipient can open /invite/[token] and respond without an active
+  // PB auth session. Accept/decline writes go straight through the API
+  // via the token-scoped updateRule below, no hook needed for that part.
+  // Named "invites", not "match_proposal_players": collectionIdFor()
+  // truncates names >=11 chars to their first 11, and "match_proposal_"
+  // would collide with "match_proposals" itself under that truncation.
+  {
+    name: "invites",
+    type: "base",
+    fields: [
+      { name: "proposal", type: "relation", relationTo: "match_proposals", maxSelect: 1, required: true, cascadeDelete: true },
+      { name: "player", type: "relation", relationTo: "players", maxSelect: 1, required: true },
+      { name: "response", type: "select", required: true, maxSelect: 1, options: ["pending", "accepted", "declined"] },
+      { name: "invite_token", type: "text", required: true, unique: true, min: 8, max: 64 },
+      { name: "responded_at", type: "date" },
+    ],
+    indexes: [
+      "CREATE UNIQUE INDEX idx_invites_proposal_player ON invites (proposal, player)",
+    ],
+    listRule: "",
+    viewRule: "",
+    createRule: null,
+    updateRule: 'invite_token = @request.query.token && response = "pending"',
+    deleteRule: null,
+  },
+
+  // Web Push subscriptions. Client-managed directly (register on opt-in,
+  // delete on opt-out) — no hook involvement for CRUD, only for reading
+  // these when the weekly matcher sends notifications.
+  {
+    name: "push_subscriptions",
+    type: "base",
+    fields: [
+      { name: "player", type: "relation", relationTo: "players", maxSelect: 1, required: true, cascadeDelete: true },
+      { name: "endpoint", type: "text", required: true, max: 500 },
+      { name: "p256dh", type: "text", required: true, max: 300 },
+      { name: "auth", type: "text", required: true, max: 100 },
+    ],
+    indexes: [
+      "CREATE UNIQUE INDEX idx_push_player_endpoint ON push_subscriptions (player, endpoint)",
+    ],
+    listRule: "",
+    viewRule: "",
+    createRule: "player = @request.auth.id",
+    updateRule: "player = @request.auth.id",
+    deleteRule: "player = @request.auth.id",
   },
 ];
 

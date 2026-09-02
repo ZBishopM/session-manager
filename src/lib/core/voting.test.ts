@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { RANDOM_VOTE, resolveVotes, type Vote } from "./voting.js";
+import { RANDOM_VOTE, decideVotes, resolveVotes, type Vote } from "./voting.js";
 
 const eligible = ["g1", "g2", "g3"];
 
@@ -93,5 +93,54 @@ describe("resolveVotes", () => {
     ];
     const r = resolveVotes(votes, eligible);
     expect(r).toEqual({ kind: "chosen", gameId: "g1" });
+  });
+});
+
+describe("decideVotes", () => {
+  it("passes through a clear winner unchanged", () => {
+    const votes: Vote[] = [
+      { userId: "u1", gameId: "g1" },
+      { userId: "u2", gameId: "g1" },
+      { userId: "u3", gameId: "g2" },
+    ];
+    expect(decideVotes(votes, eligible)).toEqual({ kind: "chosen", gameId: "g1" });
+  });
+
+  it("breaks a game-vs-game tie by picking one of the tied candidates", () => {
+    const votes: Vote[] = [
+      { userId: "u1", gameId: "g1" },
+      { userId: "u2", gameId: "g2" },
+    ];
+    const r = decideVotes(votes, eligible, () => 0);
+    expect(r.kind).toBe("chosen");
+    if (r.kind === "chosen") expect(["g1", "g2"]).toContain(r.gameId);
+  });
+
+  it("breaks a game-vs-RANDOM tie by falling through to a random eligible game when RANDOM is picked", () => {
+    const votes: Vote[] = [
+      { userId: "u1", gameId: "g1" },
+      { userId: "u2", gameId: RANDOM_VOTE },
+    ];
+    // candidates sorted by insertion into the Map: g1 then RANDOM_VOTE.
+    // rand() close to 1 picks the last candidate (RANDOM_VOTE), then the
+    // same rand() feeds the eligible-game draw too.
+    const r = decideVotes(votes, eligible, () => 0.99);
+    expect(r.kind === "chosen" || r.kind === "random").toBe(true);
+  });
+
+  it("falls back to no_votes when there are no votes at all", () => {
+    expect(decideVotes([], eligible)).toEqual({ kind: "no_votes" });
+  });
+
+  it("never returns a tie", () => {
+    for (let i = 0; i < 20; i++) {
+      const votes: Vote[] = [
+        { userId: "u1", gameId: "g1" },
+        { userId: "u2", gameId: "g2" },
+        { userId: "u3", gameId: "g3" },
+      ];
+      const r = decideVotes(votes, eligible, Math.random);
+      expect(r.kind).not.toBe("tie");
+    }
   });
 });

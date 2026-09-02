@@ -1,0 +1,63 @@
+/**
+ * Pure message-building for the weekly matchmaking notifications. The
+ * hook (pb_hooks/weekly_matchmaker.pb.js) does the actual I/O — this
+ * module only decides what the message text says, so it's testable
+ * without touching $http or $os.
+ */
+
+import { TIME_SLOT_LABEL_ES, WEEKDAY_LABEL_ES, type Weekday, type TimeSlot } from "./matchmaking.js";
+
+export interface InviteRecipient {
+  nickname: string;
+  /** Absolute URL to /invite/[token] for this recipient. */
+  url: string;
+}
+
+export interface ProposalSummary {
+  hostNickname: string;
+  weekday: Weekday;
+  timeSlot: TimeSlot;
+}
+
+// Same alphabet/length convention as sessions.qr_token (src/lib/qr.ts),
+// reimplemented here rather than imported: qr.ts also pulls in the
+// `qrcode` npm package for SVG rendering, which doesn't run inside
+// PocketBase's Goja JS runtime — this module has to stay hook-safe.
+const TOKEN_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+const TOKEN_LENGTH = 16;
+
+export function generateInviteToken(random: () => number = Math.random): string {
+  let token = "";
+  for (let i = 0; i < TOKEN_LENGTH; i++) {
+    token += TOKEN_ALPHABET[Math.floor(random() * TOKEN_ALPHABET.length)];
+  }
+  return token;
+}
+
+/**
+ * One Discord message per proposal, posted to a shared channel — not a
+ * per-player DM (Discord webhooks can't DM arbitrary users). Names the
+ * whole invited group so it reads like an actual hangout proposal, with
+ * each person's own accept/decline link.
+ */
+// TIME_SLOT_LABEL_ES holds the bare noun ("tarde") since it's shared with
+// the /availability dropdown; this message wants the connected phrase
+// ("a la tarde" / "de madrugada"), so that grammar stays local to here.
+const SLOT_CONNECTOR_ES: Record<TimeSlot, string> = {
+  morning: "a la",
+  afternoon: "a la",
+  evening: "a la",
+  night: "de",
+};
+
+export function buildDiscordMessage(
+  proposal: ProposalSummary,
+  recipients: readonly InviteRecipient[],
+): string {
+  const when = `${WEEKDAY_LABEL_ES[proposal.weekday]} ${SLOT_CONNECTOR_ES[proposal.timeSlot]} ${TIME_SLOT_LABEL_ES[proposal.timeSlot]}`;
+  const lines = [
+    `🎲 **${proposal.hostNickname}** puede hostear ${when} — ¿juegan?`,
+    ...recipients.map((r) => `• ${r.nickname}: ${r.url}`),
+  ];
+  return lines.join("\n");
+}
