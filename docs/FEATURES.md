@@ -49,16 +49,17 @@ Or simpler for a quick look at just the PocketBase side: `npm run test:integrati
 
 ## Weekly matchmaking — setting your availability
 
-- [x] **v3 (live, 897d906)** — **New.** Set your standing weekly host/player availability. `/availability` (linked from `/profile`).
-  - Pick a role (Host / Jugador), a weekday, and a time slot (morning/afternoon/evening/night).
-  - As host: set how many people you can receive.
-  - As player: optionally cap the max group size you're willing to join ("no me importa" is the default — no cap).
-  - Add as many rows as you want (one per role+day+slot combo — posting the same combo twice is rejected). Each shows in a list below with a "Quitar" button to delete it.
-  - This is standing/recurring — it's not "I'm free this specific Saturday," it's "I'm generally free Saturday afternoons." The matchmaker (below) reads this every week.
+- [x] ~~v3~~ **v7 (live, 2d20cc0)** — **Replaced in v7.** Set your standing weekly host/player availability. `/availability` (linked from `/profile`).
+  - **v7**: a real calendar grid — 7 day columns × 24 hour rows, tap a cell to toggle it. Select any mix of days and hours before saving; "Guardar" merges each day's toggled hours into contiguous ranges (a gap in the same day creates a second block) and creates one `availabilities` row per resulting block. Replaces the old day+fixed-slot dropdown — `time_slot` (morning/afternoon/evening/night) is gone entirely, replaced by real `start_hour`/`end_hour`.
+  - As host: set how many people you can receive (applies to the whole batch of cells you're about to save).
+  - As player: optionally cap the max group size you're willing to join ("no me importa" is the default — no cap), same batch scope.
+  - The grid is purely an *add* tool — it always starts empty, it doesn't reflect what you've already saved. Removal still happens via the "Tu semana" list below, each row with its own "Quitar" button (unchanged from v3).
+  - This is standing/recurring — it's not "I'm free this specific Saturday," it's "I'm generally free Saturday evenings." The matchmaker (below) reads this every week.
 
 ## Weekly matchmaking — the actual matching + notification
 
-- [x] **v3 (live, 897d906 — backend only, no UI trigger)** — **New.** Every Sunday 18:00, a cron job (`pb_hooks/weekly_matchmaker.pb.js`) reads everyone's `/availability` rows, groups compatible host+player combinations per day/slot (host capacity and player group-size caps both respected — pure algorithm in `src/lib/core/matchmaking.ts`, 12 unit tests), creates a proposal, and posts one message per proposal to Discord with a personal accept/decline link per invited player.
+- [x] **v3 (live, 897d906 — backend only, no UI trigger)** — **New.** Every Sunday 18:00, a cron job (`pb_hooks/weekly_matchmaker.pb.js`) reads everyone's `/availability` rows, groups compatible host+player combinations per day (host capacity and player group-size caps both respected — pure algorithm in `src/lib/core/matchmaking.ts`), creates a proposal, and posts one message per proposal to Discord with a personal accept/decline link per invited player.
+  - **v7 update**: matching moved from exact time-slot equality to real interval overlap. The proposed session time is always the **host's own range** — a player just needs at least **3 hours of overlap** with it (`MIN_OVERLAP_HOURS` in `matchmaking.ts`), not full containment. A 1-2h sliver of overlap doesn't count as compatible. 18 unit tests cover the overlap boundary cases (exact 3h match, under 3h, touching-but-zero-overlap, fully disjoint).
   - **To test locally**: needs `DISCORD_WEBHOOK_URL` (a Discord channel webhook — same kind in_out already uses) and `PUBLIC_URL` (e.g. `http://localhost:5173`) set as env vars for the local PocketBase process. The cron won't fire until Sunday 18:00 by default — for a quick manual test, temporarily change the schedule string in `weekly_matchmaker.pb.js`'s `cronAdd("weekly-matchmaker", "0 18 * * 0", ...)` to `"* * * * *"` (every minute) and watch the Discord channel + stdout for `[weekly_matchmaker]` lines. Revert the schedule before committing.
 
 ## Weekly matchmaking — responding to an invite
