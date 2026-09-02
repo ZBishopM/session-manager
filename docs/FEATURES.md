@@ -86,6 +86,13 @@ Or simpler for a quick look at just the PocketBase side: `npm run test:integrati
   - Once everyone who joined has voted, the pick resolves automatically: most votes wins; if "Aleatorio" wins, a random eligible game is drawn; **ties are broken by a random pick among the tied options** (not a host override — see "Not yet possible").
   - The resolved game then shows on `/session/[id]` for everyone instead of the voting screen.
 
+## Weekly matchmaking — email channel
+
+- [x] **v6 (live, 69e931d)** — **New.** Invite notifications now also go out by email, alongside Discord. `/profile` has a new "Correo para notificaciones de matchmaking" field to opt in — leave it blank and you just don't get emailed.
+  - Backed by a real self-hosted mail server: Stalwart, running on the agapornis VPS at `mail.agapornis.app`, with its own domain (`agapornis.app`), real Let's Encrypt TLS (auto-renewing via ACME DNS-01 through Cloudflare), and SPF/DKIM/DMARC configured for deliverability.
+  - `pb_hooks/mail_config.pb.js` configures PocketBase's built-in SMTP mailer from `SMTP_HOST`/`SMTP_PORT`/`SMTP_USERNAME`/`SMTP_PASSWORD`/`SMTP_FROM` env vars on startup (unset = email stays disabled, same "skip and log" pattern as the Discord webhook). `weekly_matchmaker.pb.js` sends one personal email per invited player who has an email set — same invite link as the Discord/in-app versions.
+  - Verified end-to-end with a real send through the production mail server, delivered to a real inbox without landing in spam.
+
 ---
 
 ## Not yet possible (data model or component exists, but nothing wires it up)
@@ -105,5 +112,5 @@ These are real gaps, not just missing polish — worth knowing before you go loo
 ## Coming next (per the matchmaking plan)
 
 Full design in `C:\Users\obisp\.claude\plans\verify-what-s-missing-first-hashed-lovelace.md`. What's left, in build order:
-- **Email + Web Push channels** — Discord is the only notification channel so far. Web Push needs a spike first: PocketBase hooks run in Goja, a restricted JS VM, and the standard VAPID-signing library may not run there at all — see `pendientes/gamesessions.md` for the fallback plan (relay through in_out's n8n instance) if so.
+- **Web Push channel** — Discord and email are both live now. Web Push needs a spike first: PocketBase hooks run in Goja, a restricted JS VM, and the standard VAPID-signing library may not run there at all — see `pendientes/gamesessions.md` for the fallback plan (relay through in_out's n8n instance) if so.
 - **Also not yet possible, from v4/v5**: no way to change an invite response once given (decline → re-accept isn't wired), no expiry sweep for old proposals that never got enough acceptances (`status: "expired"` exists in the schema, nothing sets it).
