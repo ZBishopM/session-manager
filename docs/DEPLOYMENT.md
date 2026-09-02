@@ -1,5 +1,7 @@
 # Despliegue y operación
 
+> **Nota (2026-09-02):** este documento describe un setup desde cero en un Lightsail nuevo de 1 GB, pero el despliegue real terminó en un VPS Hetzner compartido ya existente ("agapornis", ~3.7 GB RAM, comparte máquina con art-chat-server, piles-game, n8n/postgres de in_out, Navidrome) — de hecho la §3 más abajo ya lo insinúa ("Si ya usabas el VPS para Art Chat / Piles..."), pero la §1 sigue framing todo como instancia nueva. Confirmado por recon SSH directo: usuario real `bicho` (no `ubuntu`), PocketBase corre desde `/var/www/session-manager/pb/` (sin flags `--hooksDir`/`--migrationsDir` — los toma relativos a su cwd), el frontend se sirve desde `/var/www/session-manager/build/`. `scripts/deploy.sh` ya está corregido a estas rutas reales. El resto de este documento (swap, nginx, certbot, cron de backup, etc.) no se re-verificó línea por línea contra la máquina real — tratarlo como referencia histórica/aspiracional para los pasos que no sean rutas, no como fuente de verdad 1:1. Ver `pendientes/gamesessions.md` para el hallazgo completo.
+
 Stack en producción: **AWS Lightsail Ubuntu 1 GB RAM + 2 GB swap**, sin Docker, gestionado por **PM2** y expuesto vía **Nginx** con TLS de Let's Encrypt. La base de datos es SQLite embebida en PocketBase.
 
 ---
