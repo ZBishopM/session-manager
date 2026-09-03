@@ -44,6 +44,8 @@ export interface AchievementsRecord extends BaseRecord {
   trigger_expr: string;
   rarity: "common" | "rare" | "epic" | "";
   icon?: string;
+  status: "pending" | "approved" | "";
+  proposed_by?: string;
 }
 
 export interface SessionsRecord extends BaseRecord {
@@ -77,6 +79,7 @@ export interface MatchPlayersRecord extends BaseRecord {
   match: string;
   player: string;
   won?: boolean;
+  placement?: number;
   rating?: "like" | "dislike" | "";
 }
 
@@ -127,6 +130,12 @@ export interface PushSubscriptionsRecord extends BaseRecord {
   auth: string;
 }
 
+export interface PilesClaimsRecord extends BaseRecord {
+  player: string;
+  code: string;
+  consumed_at?: string;
+}
+
 /** Maps a collection name to its strongly-typed record. */
 export interface CollectionRecordMap {
   categories: CategoriesRecord;
@@ -143,6 +152,7 @@ export interface CollectionRecordMap {
   match_proposals: MatchProposalsRecord;
   invites: InvitesRecord;
   push_subscriptions: PushSubscriptionsRecord;
+  piles_claims: PilesClaimsRecord;
 }
 
 export type CollectionName = keyof CollectionRecordMap;

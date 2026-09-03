@@ -7,11 +7,14 @@
   export let disabled: boolean = false;
 
   const dispatch = createEventDispatcher<{
-    confirm: { winnerIds: string[]; durationSeconds: number };
+    confirm: { winnerIds: string[]; durationSeconds: number; placements?: Record<string, number> };
   }>();
 
   let winnerIds: Set<string> = new Set();
   let durationSeconds = initialDurationSeconds;
+  // Svelte binds a numeric <input> as a number, or "" when cleared — not a
+  // plain string. Blank means "not ranked."
+  let placements: Record<string, number | ""> = {};
 
   function toggleWinner(id: string): void {
     if (disabled) return;
@@ -28,15 +31,32 @@
     return `${String(mm).padStart(2, "0")}:${String(ss).padStart(2, "0")}`;
   }
 
+  function parsedPlacements(): Record<string, number> {
+    const out: Record<string, number> = {};
+    for (const [id, raw] of Object.entries(placements)) {
+      if (raw !== "" && Number.isFinite(raw) && raw >= 1) out[id] = raw;
+    }
+    return out;
+  }
+
   function confirm(): void {
     if (disabled) return;
+    const placementMap = parsedPlacements();
+    const effectiveWinners = new Set(winnerIds);
+    for (const [id, place] of Object.entries(placementMap)) {
+      if (place === 1) effectiveWinners.add(id);
+    }
     dispatch("confirm", {
-      winnerIds: [...winnerIds],
+      winnerIds: [...effectiveWinners],
       durationSeconds: Math.max(0, Math.floor(durationSeconds)),
+      ...(Object.keys(placementMap).length > 0 ? { placements: placementMap } : {}),
     });
   }
 
-  $: anyWinner = winnerIds.size > 0;
+  // Svelte's reactive-statement dependency tracking only sees variables
+  // referenced directly here, not inside a called function — reference
+  // `placements` itself rather than parsedPlacements() so this recomputes.
+  $: anyWinner = winnerIds.size > 0 || Object.values(placements).some((v) => v === 1);
 </script>
 
 <section class="flex flex-col gap-4 rounded-2xl bg-slate-800/70 p-4">
@@ -65,15 +85,19 @@
     </span>
   </label>
 
+  <p class="text-xs text-slate-500">
+    Opcional: si el juego se juega por puestos, escribe el puesto de cada jugador (1 = ganó).
+  </p>
+
   <ul class="flex flex-col gap-2">
     {#each players as p (p.id)}
       {@const won = winnerIds.has(p.id)}
-      <li>
+      <li class="flex items-center gap-2">
         <button
           type="button"
           role="checkbox"
           aria-checked={won}
-          class="flex w-full items-center justify-between gap-2 rounded-xl border-2 px-3 py-2.5 text-left transition-colors
+          class="flex flex-1 items-center justify-between gap-2 rounded-xl border-2 px-3 py-2.5 text-left transition-colors
                  {won
                    ? 'border-emerald-300 bg-emerald-500/10 text-emerald-100'
                    : 'border-slate-700 bg-slate-900/50 text-slate-200 hover:border-slate-500'}"
@@ -87,6 +111,15 @@
             {won ? "ganó 🏆" : "perdió"}
           </span>
         </button>
+        <input
+          type="number"
+          min="1"
+          placeholder="Puesto"
+          bind:value={placements[p.id]}
+          {disabled}
+          data-testid="placement-{p.id}"
+          class="w-16 rounded-md border border-slate-600 bg-slate-900 px-2 py-1 text-right text-sm text-slate-100 focus:border-cyan-300 focus:outline-none disabled:opacity-50"
+        />
       </li>
     {/each}
   </ul>

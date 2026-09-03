@@ -52,6 +52,59 @@ const INIT_COLLECTION_NAMES = [
   "player_achievements",
 ] as const;
 
+/**
+ * Frozen shape of `achievements`/`match_players` as first applied by
+ * 1700000000_init.js — before achievement propose/approve and placement
+ * tracking. Same reasoning as MATCHMAKING_SNAPSHOT below: init.js already
+ * ran against prod, so its generated content must never change even
+ * though schema.ts's live COLLECTIONS evolved past it (see
+ * pb_migrations/1735689800_achievements_teams.js for the real
+ * alteration). Every other init collection hasn't diverged from its
+ * original shape, so it's still read live from COLLECTIONS.
+ */
+const INIT_SNAPSHOT: readonly CollectionDef[] = [
+  {
+    name: "achievements",
+    type: "base",
+    fields: [
+      { name: "game", type: "relation", relationTo: "games", maxSelect: 1, required: true, cascadeDelete: true },
+      { name: "title", type: "text", required: true, min: 1, max: 80 },
+      { name: "description", type: "text", required: true, min: 1, max: 300 },
+      { name: "trigger_expr", type: "text", required: true, min: 1, max: 500 },
+      { name: "rarity", type: "select", required: true, maxSelect: 1, options: ["common", "rare", "epic"] },
+      { name: "icon", type: "text", max: 20 },
+    ],
+    listRule: "",
+    viewRule: "",
+  },
+  {
+    name: "match_players",
+    type: "base",
+    fields: [
+      { name: "match", type: "relation", relationTo: "matches", maxSelect: 1, required: true, cascadeDelete: true },
+      { name: "player", type: "relation", relationTo: "players", maxSelect: 1, required: true },
+      { name: "won", type: "bool" },
+      { name: "rating", type: "select", maxSelect: 1, options: ["like", "dislike"] },
+    ],
+    indexes: [
+      "CREATE UNIQUE INDEX idx_mp_match_player ON match_players (match, player)",
+    ],
+    listRule: "",
+    viewRule: "",
+  },
+];
+
+function initDefaultCollections(): readonly CollectionDef[] {
+  const snapshotByName = new Map(INIT_SNAPSHOT.map((c) => [c.name, c]));
+  const names: readonly string[] = INIT_COLLECTION_NAMES;
+  // Substitute in place rather than prepending, so collection order in the
+  // generated file matches the original declaration order exactly — the
+  // frozen ones aren't necessarily first in INIT_COLLECTION_NAMES.
+  return COLLECTIONS.filter((c) => names.includes(c.name)).map(
+    (c) => snapshotByName.get(c.name) ?? c,
+  );
+}
+
 const MATCHMAKING_OPTIONS: MigrationOptions = {
   timestamp: 1735689600,
   name: "matchmaking",
@@ -63,6 +116,13 @@ const MATCHMAKING_COLLECTION_NAMES = [
   "invites",
   "push_subscriptions",
 ] as const;
+
+const PILES_OPTIONS: MigrationOptions = {
+  timestamp: 1735689900,
+  name: "piles",
+};
+
+const PILES_COLLECTION_NAMES = ["piles_claims"] as const;
 
 /**
  * Frozen shape of `availabilities`/`match_proposals` as first applied by
@@ -164,7 +224,7 @@ export function buildMigration(
 }
 
 export function buildInitMigration(
-  collections: readonly CollectionDef[] = COLLECTIONS,
+  collections: readonly CollectionDef[] = initDefaultCollections(),
 ): string {
   return buildMigration(collections, collections);
 }
@@ -172,12 +232,21 @@ export function buildInitMigration(
 export function buildMatchmakingMigration(
   allCollections: readonly CollectionDef[] = COLLECTIONS,
 ): string {
-  const frozenNames = new Set(MATCHMAKING_SNAPSHOT.map((c) => c.name));
+  const snapshotByName = new Map(MATCHMAKING_SNAPSHOT.map((c) => [c.name, c]));
   const names: readonly string[] = MATCHMAKING_COLLECTION_NAMES;
-  const toCreate = [
-    ...MATCHMAKING_SNAPSHOT,
-    ...allCollections.filter((c) => names.includes(c.name) && !frozenNames.has(c.name)),
-  ];
+  // Substitute in place rather than prepending, so collection order in the
+  // generated file matches the original declaration order exactly.
+  const toCreate = allCollections
+    .filter((c) => names.includes(c.name))
+    .map((c) => snapshotByName.get(c.name) ?? c);
+  return buildMigration(toCreate, allCollections);
+}
+
+export function buildPilesMigration(
+  allCollections: readonly CollectionDef[] = COLLECTIONS,
+): string {
+  const names: readonly string[] = PILES_COLLECTION_NAMES;
+  const toCreate = allCollections.filter((c) => names.includes(c.name));
   return buildMigration(toCreate, allCollections);
 }
 
@@ -448,9 +517,7 @@ function repoRoot(): string {
 
 export function writeInitMigration(
   opts: MigrationOptions = INIT_OPTIONS,
-  collections: readonly CollectionDef[] = COLLECTIONS.filter((c) =>
-    (INIT_COLLECTION_NAMES as readonly string[]).includes(c.name),
-  ),
+  collections: readonly CollectionDef[] = initDefaultCollections(),
 ): { path: string; contents: string; changed: boolean } {
   const root = repoRoot();
   const dir = join(root, "pb_migrations");
@@ -492,9 +559,31 @@ export function writeMatchmakingMigration(
   return { path, contents, changed: true };
 }
 
+export function writePilesMigration(
+  opts: MigrationOptions = PILES_OPTIONS,
+  allCollections: readonly CollectionDef[] = COLLECTIONS,
+): { path: string; contents: string; changed: boolean } {
+  const root = repoRoot();
+  const dir = join(root, "pb_migrations");
+  mkdirSync(dir, { recursive: true });
+  const path = join(dir, migrationFilename(opts));
+  const contents = buildPilesMigration(allCollections);
+  let previous = "";
+  try {
+    previous = readFileSync(path, "utf8");
+  } catch {
+    // first run
+  }
+  if (previous === contents) {
+    return { path, contents, changed: false };
+  }
+  writeFileSync(path, contents, "utf8");
+  return { path, contents, changed: true };
+}
+
 const isMain = process.argv[1] === fileURLToPath(import.meta.url);
 if (isMain) {
-  for (const result of [writeInitMigration(), writeMatchmakingMigration()]) {
+  for (const result of [writeInitMigration(), writeMatchmakingMigration(), writePilesMigration()]) {
     const rel = result.path.replace(repoRoot() + "\\", "").replace(repoRoot() + "/", "");
     if (result.changed) {
       console.log(`[build-migrations] wrote ${rel}`);

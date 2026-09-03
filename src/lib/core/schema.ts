@@ -134,6 +134,11 @@ export const COLLECTIONS: readonly CollectionDef[] = [
     deleteRule: "created_by = @request.auth.id",
   },
 
+  // Propose/approve (added 2026-09-03) — this collection was already live
+  // under a simpler shape via 1700000000_init.js (frozen, see
+  // INIT_SNAPSHOT in build-migrations.ts), so the fields below aren't
+  // what that generated migration actually creates. The real alteration
+  // is the hand-written pb_migrations/1735689800_achievements_teams.js.
   {
     name: "achievements",
     type: "base",
@@ -144,9 +149,16 @@ export const COLLECTIONS: readonly CollectionDef[] = [
       { name: "trigger_expr", type: "text", required: true, min: 1, max: 500 },
       { name: "rarity", type: "select", required: true, maxSelect: 1, options: ["common", "rare", "epic"] },
       { name: "icon", type: "text", max: 20 },
+      // Any player can propose one (open createRule); a hook forces this
+      // to "pending" server-side regardless of what's submitted, so only
+      // a superuser flipping it via the admin dashboard can approve it.
+      // Gemini-generated proposals (game_created.pb.js) start pending too.
+      { name: "status", type: "select", required: true, maxSelect: 1, options: ["pending", "approved"] },
+      { name: "proposed_by", type: "relation", relationTo: "players", maxSelect: 1 },
     ],
     listRule: "",
     viewRule: "",
+    createRule: '@request.auth.id != ""',
   },
 
   {
@@ -211,13 +223,26 @@ export const COLLECTIONS: readonly CollectionDef[] = [
     // set by pb_migrations/1735689601_matchmaking_rules.js, not here.
   },
 
+  // Team/placement wins (added 2026-09-03) — same note as achievements
+  // above: this collection is part of the frozen 1700000000_init.js
+  // (see INIT_SNAPSHOT), the real alteration is the hand-written
+  // pb_migrations/1735689800_achievements_teams.js.
   {
     name: "match_players",
     type: "base",
     fields: [
       { name: "match", type: "relation", relationTo: "matches", maxSelect: 1, required: true, cascadeDelete: true },
       { name: "player", type: "relation", relationTo: "players", maxSelect: 1, required: true },
+      // Primary win signal — every existing trigger/XP calculation reads
+      // this. Supports 1..N simultaneous winners already (free-for-all
+      // with one winner, or a whole team) since it's just a bool per row.
       { name: "won", type: "bool" },
+      // Optional ranked placement (1st, 2nd, 3rd...) for games that rank
+      // results instead of/alongside a plain win — not read by the
+      // trigger DSL yet, stored for achievements that want it later.
+      // Duplicate placements across players are allowed on purpose
+      // (ties, co-op wins).
+      { name: "placement", type: "number", min: 1 },
       // Tri-state by design: empty = not rated yet. PB bool defaults to false,
       // which would otherwise be indistinguishable from "rated as 👎".
       { name: "rating", type: "select", maxSelect: 1, options: ["like", "dislike"] },
@@ -375,6 +400,28 @@ export const COLLECTIONS: readonly CollectionDef[] = [
     viewRule: "",
     createRule: "player = @request.auth.id",
     updateRule: "player = @request.auth.id",
+    deleteRule: "player = @request.auth.id",
+  },
+
+  // Piles-game linking (added 2026-09-03). A player generates a
+  // short-lived code here, types it into piles-game (a separate,
+  // account-less project) before a round, and piles-game's own
+  // client-side JS POSTs the result straight to pb_hooks/piles_claim.pb.js
+  // (a public routerAdd route, not the regular collection API) using the
+  // code to identify who to credit. Nothing but that hook ever reads or
+  // consumes a row — everything below createRule stays null on purpose.
+  {
+    name: "piles_claims",
+    type: "base",
+    fields: [
+      { name: "player", type: "relation", relationTo: "players", maxSelect: 1, required: true, cascadeDelete: true },
+      { name: "code", type: "text", required: true, unique: true, min: 6, max: 12 },
+      { name: "consumed_at", type: "date" },
+    ],
+    listRule: "",
+    viewRule: "",
+    createRule: "player = @request.auth.id",
+    updateRule: null,
     deleteRule: "player = @request.auth.id",
   },
 ];

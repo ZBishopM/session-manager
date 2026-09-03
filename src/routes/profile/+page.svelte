@@ -33,6 +33,54 @@
       savingEmail = false;
     }
   }
+
+  let gamesWon: number | null = null;
+
+  async function loadGamesWon(): Promise<void> {
+    if (!$user) return;
+    try {
+      const result = await collection("match_players").getList(1, 1, {
+        filter: `player = "${$user.id}" && won = true && match.status = "done"`,
+      });
+      gamesWon = result.totalItems;
+    } catch (err) {
+      console.error(err);
+    }
+  }
+
+  const CODE_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  function generateClaimCode(): string {
+    let code = "";
+    for (let i = 0; i < 6; i++) {
+      code += CODE_ALPHABET[Math.floor(Math.random() * CODE_ALPHABET.length)];
+    }
+    return code;
+  }
+
+  let pilesCode: string | null = null;
+  let generatingCode = false;
+
+  async function linkPiles(): Promise<void> {
+    if (!$user || generatingCode) return;
+    generatingCode = true;
+    try {
+      const stale = await collection("piles_claims").getFullList({
+        filter: `player = "${$user.id}" && consumed_at = ""`,
+      });
+      for (const claim of stale) {
+        await collection("piles_claims").delete(claim.id);
+      }
+      const code = generateClaimCode();
+      await collection("piles_claims").create({ player: $user.id, code });
+      pilesCode = code;
+    } catch (err) {
+      console.error(err);
+    } finally {
+      generatingCode = false;
+    }
+  }
+
+  $: if ($user) void loadGamesWon();
 </script>
 
 <svelte:head><title>Perfil · Session Manager</title></svelte:head>
@@ -58,7 +106,9 @@
       </div>
       <div class="flex flex-col">
         <h1 class="text-xl font-semibold text-slate-100">{$user.nickname}</h1>
-        <p class="text-xs text-slate-400">Nivel {$user.level} · {$user.re_rolls ?? 0} re-rolls</p>
+        <p class="text-xs text-slate-400">
+          Nivel {$user.level} · {$user.re_rolls ?? 0} re-rolls · {gamesWon ?? "…"} partidas ganadas
+        </p>
       </div>
     </div>
     <XpBar xp={$user.xp ?? 0} />
@@ -88,6 +138,28 @@
     </div>
     {#if emailSaved}
       <p class="text-xs text-emerald-300">Guardado.</p>
+    {/if}
+  </section>
+
+  <section class="mt-4 flex flex-col gap-2 rounded-2xl bg-slate-800/70 p-4">
+    <p class="text-xs uppercase tracking-wide text-slate-400">Vincular Piles</p>
+    <p class="text-xs text-slate-400">
+      Genera un código y escríbelo en Piles antes de terminar una partida para sumar el resultado
+      a este perfil.
+    </p>
+    <button
+      type="button"
+      disabled={generatingCode}
+      on:click={linkPiles}
+      class="self-start rounded-lg bg-gradient-to-r from-indigo-500 to-cyan-400 px-3 py-2 text-sm font-semibold text-white disabled:opacity-50"
+    >
+      {generatingCode ? "…" : "Generar código"}
+    </button>
+    {#if pilesCode}
+      <p class="font-mono text-lg tracking-widest text-emerald-300" data-testid="piles-code">
+        {pilesCode}
+      </p>
+      <p class="text-xs text-slate-500">Válido por 15 minutos.</p>
     {/if}
   </section>
 

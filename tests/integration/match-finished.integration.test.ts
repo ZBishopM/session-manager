@@ -61,6 +61,7 @@ describe("match_finished hook fires on status=done", () => {
         description: "Your first Mancala win — you have moved the first pebble of many.",
         trigger_expr: "wins_on_game >= 1",
         rarity: "common",
+        status: "approved",
       }),
       "create achievement",
     )) as IdRecord;

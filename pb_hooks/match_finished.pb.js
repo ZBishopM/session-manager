@@ -113,7 +113,7 @@ onRecordAfterUpdateSuccess((e) => {
     }
 
     const achievementDefs = $app
-      .findRecordsByFilter("achievements", `game = "${gameId}"`, "", 500, 0)
+      .findRecordsByFilter("achievements", `game = "${gameId}" && status = "approved"`, "", 500, 0)
       .map((a) => ({
         id: a.id,
         triggerExpr: a.get("trigger_expr"),

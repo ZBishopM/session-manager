@@ -1,11 +1,13 @@
 /**
- * Generates per-game achievements with Claude.
+ * Generates per-game achievement proposals with Gemini — these land as
+ * status: "pending" (pb_hooks/game_created.pb.js), same review gate as a
+ * player-proposed achievement, not auto-approved.
  *
  * All network IO lives in the PocketBase hook (Goja side); this module
  * provides the three pure building blocks:
- *   - buildPrompt:  system + user text (system is constant & cacheable)
- *   - buildClaudeRequest: serialized Messages API body
- *   - extractClaudeText + parseAchievements: pull the JSON list out of
+ *   - buildPrompt: system + user text (system is constant & cacheable)
+ *   - buildGeminiRequest: serialized generateContent request body
+ *   - extractGeminiText + parseAchievements: pull the JSON list out of
  *     the response and drop any entries that wouldn't evaluate under
  *     our trigger DSL.
  *

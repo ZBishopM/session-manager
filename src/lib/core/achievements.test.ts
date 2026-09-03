@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { evaluateTrigger } from "./achievements.js";
+import { evaluateTrigger, triggerExprIsValid } from "./achievements.js";
 
 describe("evaluateTrigger", () => {
   describe("simple comparisons", () => {
@@ -116,5 +116,26 @@ describe("evaluateTrigger", () => {
         evaluateTrigger(expr, { losses_on_game: 10, wins_on_game: 1 }),
       ).toBe(false);
     });
+  });
+});
+
+describe("triggerExprIsValid", () => {
+  it("accepts well-formed expressions regardless of how they'd evaluate", () => {
+    expect(triggerExprIsValid("wins_on_game >= 5")).toBe(true);
+    // Always-false but syntactically fine — evaluateTrigger alone can't
+    // tell this apart from a parse error, triggerExprIsValid can.
+    expect(triggerExprIsValid("wins_on_game < 0")).toBe(true);
+  });
+
+  it("rejects malformed expressions", () => {
+    expect(triggerExprIsValid("")).toBe(false);
+    expect(triggerExprIsValid("wins_on_game >=")).toBe(false);
+    expect(triggerExprIsValid("wins_on_game >= 5 &&")).toBe(false);
+    expect(triggerExprIsValid("wins_on_game $$ 5")).toBe(false);
+    expect(triggerExprIsValid("(wins_on_game >= 5")).toBe(false);
+  });
+
+  it("rejects trailing garbage after a valid expression", () => {
+    expect(triggerExprIsValid("wins_on_game >= 5 wins_on_game")).toBe(false);
   });
 });

@@ -8,6 +8,10 @@
   import type { SessionsRecord, MatchesRecord, GamesRecord } from "$core/records.js";
   import SessionLobby from "$lib/components/SessionLobby.svelte";
   import VoteSheet from "$lib/components/VoteSheet.svelte";
+  import MatchResultSheet from "$lib/components/MatchResultSheet.svelte";
+  import AchievementToast from "$lib/components/AchievementToast.svelte";
+  import type { MatchPlayerInfo } from "$lib/components/MatchResultSheet.types.js";
+  import type { ToastAchievement } from "$lib/components/AchievementToast.types.js";
 
   let session: SessionsRecord | null = null;
   let participantCount = 0;
@@ -22,6 +26,10 @@
   let eligibleGames: GamesRecord[] = [];
   let myVote: string | RandomVote | null = null;
   let voting = false;
+
+  let resultPlayers: MatchPlayerInfo[] = [];
+  let recordingResult = false;
+  let unlockedToasts: ToastAchievement[] = [];
 
   $: id = $page.params.id ?? "";
   $: me = currentUser();
@@ -74,6 +82,21 @@
 
       if (match.game) {
         matchGame = await collection("games").getOne(match.game);
+        if (match.status !== "done") {
+          const participants = await collection("session_participants").getFullList({
+            filter: `session = "${sessionId}" && (status = "present" || status = "playing")`,
+          });
+          resultPlayers = await Promise.all(
+            participants.map(async (p) => {
+              try {
+                const player = await collection("players").getOne(p.player);
+                return { id: p.player, nickname: player.nickname };
+              } catch {
+                return { id: p.player, nickname: "?" };
+              }
+            }),
+          );
+        }
         return;
       }
 
@@ -170,6 +193,78 @@
       voting = false;
     }
   }
+
+  async function handleRecordResult(
+    e: CustomEvent<{ winnerIds: string[]; durationSeconds: number; placements?: Record<string, number> }>,
+  ): Promise<void> {
+    if (!match || !matchGame || !session || recordingResult) return;
+    recordingResult = true;
+    error = null;
+    const beforeIso = new Date().toISOString();
+    const { winnerIds, durationSeconds, placements } = e.detail;
+    try {
+      for (const p of resultPlayers) {
+        const data: Record<string, unknown> = { won: winnerIds.includes(p.id) };
+        if (placements?.[p.id]) data.placement = placements[p.id];
+        await collection("match_players").create({ match: match.id, player: p.id, ...data });
+      }
+      await collection("matches").update(match.id, {
+        duration_seconds: durationSeconds,
+        ended_at: new Date().toISOString(),
+        status: "done",
+      });
+      await collection("sessions").update(session.id, { status: "ended" });
+      match = { ...match, status: "done", duration_seconds: durationSeconds };
+      session = { ...session, status: "ended" };
+
+      if (me) await pollForNewAchievements(matchGame.id, beforeIso);
+    } catch (err) {
+      error = "No se pudo registrar el resultado.";
+      console.error(err);
+    } finally {
+      recordingResult = false;
+    }
+  }
+
+  interface AchievementExpand {
+    id: string;
+    title: string;
+    description: string;
+    rarity: string;
+  }
+
+  async function pollForNewAchievements(gameId: string, sinceIso: string): Promise<void> {
+    // Same "poll after write" workaround as handleVote above —
+    // match_finished.pb.js's After*Success write lands after this
+    // request's own response, so re-check a couple times shortly after.
+    for (const delay of [0, 700, 1600]) {
+      if (delay) await new Promise((r) => setTimeout(r, delay));
+      try {
+        const unlocks = await collection("player_achievements").getFullList({
+          filter: `player = "${me!.id}" && achievement.game = "${gameId}" && unlocked_at >= "${sinceIso}"`,
+          expand: "achievement",
+        });
+        if (unlocks.length > 0) {
+          unlockedToasts = unlocks
+            .map((u) => (u as unknown as { expand?: { achievement?: AchievementExpand } }).expand?.achievement)
+            .filter((a): a is AchievementExpand => !!a)
+            .map((a) => ({
+              id: a.id,
+              title: a.title,
+              description: a.description,
+              rarity: a.rarity as ToastAchievement["rarity"],
+            }));
+          return;
+        }
+      } catch (err) {
+        console.error(err);
+      }
+    }
+  }
+
+  function dismissToast(id: string): void {
+    unlockedToasts = unlockedToasts.filter((t) => t.id !== id);
+  }
 </script>
 
 <svelte:head><title>Sesión · Session Manager</title></svelte:head>
@@ -194,11 +289,26 @@
         <h2>Jugando</h2>
         <p class="game-name">{matchGame.name}</p>
       </section>
+      {#if isHost && match.status !== "done"}
+        <div class="result-sheet">
+          <MatchResultSheet
+            players={resultPlayers}
+            disabled={recordingResult}
+            on:confirm={handleRecordResult}
+          />
+        </div>
+      {/if}
     {:else}
       <VoteSheet games={eligibleGames} currentVote={myVote} disabled={voting} on:vote={handleVote} />
     {/if}
   {/if}
 {/if}
+
+<div class="toast-stack">
+  {#each unlockedToasts as t (t.id)}
+    <AchievementToast achievement={t} playerNickname={me?.nickname ?? null} on:dismiss={() => dismissToast(t.id)} />
+  {/each}
+</div>
 
 <style>
   .start-btn {
@@ -234,5 +344,20 @@
     margin: 0;
     font-size: 1.3rem;
     font-weight: 700;
+  }
+  .result-sheet {
+    margin-top: 1rem;
+  }
+  .toast-stack {
+    position: fixed;
+    inset-inline: 0;
+    bottom: 1rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0 1rem;
+    pointer-events: none;
+    z-index: 50;
   }
 </style>

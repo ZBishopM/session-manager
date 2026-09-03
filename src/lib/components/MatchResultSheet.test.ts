@@ -77,6 +77,37 @@ describe("<MatchResultSheet />", () => {
     });
   });
 
+  it("typing placement 1 counts as a winner without tapping the toggle", async () => {
+    render(MatchResultSheet, { props: { players } });
+    const confirm = screen.getByTestId("confirm") as HTMLButtonElement;
+    expect(confirm.disabled).toBe(true);
+    await fireEvent.input(screen.getByTestId("placement-p1"), { target: { value: "1" } });
+    expect(confirm.disabled).toBe(false);
+  });
+
+  it("emits placements only for players with a value entered, and derives winnerIds from placement 1", async () => {
+    const { component } = render(MatchResultSheet, { props: { players, initialDurationSeconds: 90 } });
+    const onConfirm = vi.fn();
+    component.$on("confirm", (e: CustomEvent) => onConfirm(e.detail));
+    await fireEvent.input(screen.getByTestId("placement-p1"), { target: { value: "1" } });
+    await fireEvent.input(screen.getByTestId("placement-p2"), { target: { value: "2" } });
+    await fireEvent.click(screen.getByTestId("confirm"));
+    expect(onConfirm).toHaveBeenCalledWith({
+      winnerIds: ["p1"],
+      durationSeconds: 90,
+      placements: { p1: 1, p2: 2 },
+    });
+  });
+
+  it("omits placements entirely from the emitted event when no placement was entered", async () => {
+    const { component } = render(MatchResultSheet, { props: { players, initialDurationSeconds: 90 } });
+    const onConfirm = vi.fn();
+    component.$on("confirm", (e: CustomEvent) => onConfirm(e.detail));
+    await fireEvent.click(screen.getByTestId("winner-p1"));
+    await fireEvent.click(screen.getByTestId("confirm"));
+    expect(onConfirm).toHaveBeenCalledWith({ winnerIds: ["p1"], durationSeconds: 90 });
+  });
+
   it("ignores taps and confirm when disabled", async () => {
     const { component } = render(MatchResultSheet, {
       props: { players, disabled: true },

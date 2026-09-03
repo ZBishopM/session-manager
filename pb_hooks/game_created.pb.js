@@ -83,6 +83,9 @@ onRecordAfterCreateSuccess((e) => {
       rec.set("description", a.description);
       rec.set("trigger_expr", a.triggerExpr);
       rec.set("rarity", a.rarity);
+      // AI generation is beta — goes through the same pending/approved
+      // gate as a player-proposed achievement, not auto-approved.
+      rec.set("status", "pending");
       try {
         $app.save(rec);
       } catch (err) {

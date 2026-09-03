@@ -65,7 +65,9 @@
   <ul class="flex flex-col gap-3">
     {#each games as g (g.id)}
       <li>
-        <GameCard game={g} categoryNames={namesFor(g.categories)} />
+        <a href="/games/{g.id}" class="block">
+          <GameCard game={g} categoryNames={namesFor(g.categories)} />
+        </a>
       </li>
     {/each}
   </ul>

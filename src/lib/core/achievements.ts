@@ -164,3 +164,23 @@ export function evaluateTrigger(expr: string, stats: Stats): boolean {
     return false;
   }
 }
+
+/**
+ * True syntax validity, independent of the evaluated result — unlike
+ * evaluateTrigger, which collapses "malformed" and "well-formed but
+ * false" into the same `false` return. Used for live client-side
+ * feedback on a player-proposed trigger_expr (src/routes/games/[id]),
+ * where a well-formed-but-always-false expression shouldn't be flagged
+ * as an error.
+ */
+export function triggerExprIsValid(expr: string): boolean {
+  try {
+    const tokens = tokenize(expr);
+    if (tokens.length === 0) return false;
+    const parser = new Parser(tokens, {});
+    parser.parseExpr();
+    return parser.atEnd();
+  } catch {
+    return false;
+  }
+}
