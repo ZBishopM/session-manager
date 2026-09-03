@@ -18,6 +18,11 @@
     sun: "Do",
   };
   const HOURS = Array.from({ length: 24 }, (_, h) => h);
+  const WEEKEND: readonly Weekday[] = ["sat", "sun"];
+  // "I work 9-5" hides these hours from the grid entirely — a convenience
+  // filter, not saved anywhere, just fewer rows to scroll past.
+  const WORK_HOURS_START = 9;
+  const WORK_HOURS_END = 17;
   const CELL_HEIGHT_PX = 28;
   // Center the initial scroll around evening hours (board-game-night usage
   // pattern) instead of dumping the user at 00:00.
@@ -27,6 +32,11 @@
   let capacity = 4;
   let maxGroupSize = 6;
   let noGroupCap = true;
+  let omitWorkHours = false;
+
+  $: visibleHours = omitWorkHours
+    ? HOURS.filter((h) => h < WORK_HOURS_START || h >= WORK_HOURS_END)
+    : HOURS;
 
   /** "weekday:hour" keys currently toggled on the grid, not yet saved. */
   let selected = new Set<string>();
@@ -64,6 +74,10 @@
 
   function dayLabel(w: string): string {
     return WEEKDAY_LABEL_ES[w as Weekday] ?? w;
+  }
+
+  function isWeekend(w: Weekday): boolean {
+    return (WEEKEND as readonly string[]).includes(w);
   }
 
   function cellKey(weekday: Weekday, hour: number): string {
@@ -218,6 +232,11 @@
   {/if}
 {/if}
 
+<label class="mb-3 flex items-center gap-2 text-sm text-slate-300">
+  <input type="checkbox" bind:checked={omitWorkHours} data-testid="omit-work-hours" />
+  Trabajo de 9am a 5pm (oculta esas horas de la grilla)
+</label>
+
 <div
   bind:this={gridEl}
   class="mb-4 max-h-96 overflow-y-auto overflow-x-auto rounded-xl border border-slate-700"
@@ -226,13 +245,16 @@
   <div class="grid" style="grid-template-columns: 3rem repeat(7, minmax(2.25rem, 1fr));">
     <div class="sticky top-0 z-10 bg-slate-900"></div>
     {#each WEEKDAYS as w (w)}
-      <div class="sticky top-0 z-10 bg-slate-900 py-1 text-center text-xs font-semibold text-slate-300">
+      <div
+        class="sticky top-0 z-10 bg-slate-900 py-1 text-center text-xs font-semibold
+               {isWeekend(w) ? 'text-amber-300' : 'text-slate-300'}"
+      >
         {WEEKDAY_SHORT_ES[w]}
       </div>
     {/each}
-    {#each HOURS as h (h)}
+    {#each visibleHours as h (h)}
       <div
-        class="flex items-center justify-end pr-1 text-[10px] text-slate-500"
+        class="flex items-center justify-end pr-1.5 text-xs font-semibold text-slate-300"
         style="height: {CELL_HEIGHT_PX}px;"
       >
         {String(h).padStart(2, "0")}
@@ -247,7 +269,9 @@
           class="border border-slate-800 transition-colors
                  {selected.has(key)
                    ? 'bg-gradient-to-br from-indigo-500 to-cyan-400'
-                   : 'bg-slate-800/40 hover:bg-slate-700/60'}"
+                   : isWeekend(w)
+                     ? 'bg-amber-500/10 hover:bg-amber-500/25'
+                     : 'bg-slate-800/40 hover:bg-slate-700/60'}"
           style="height: {CELL_HEIGHT_PX}px;"
           on:click={() => toggleCell(w, h)}
         ></button>
