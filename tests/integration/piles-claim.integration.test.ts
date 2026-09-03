@@ -73,7 +73,7 @@ describe("POST /api/piles/claim", () => {
     return claim.code as string;
   }
 
-  it("credits the player and marks the code consumed on a valid claim", async () => {
+  it("credits the player and marks the code's last-used timestamp on a valid claim", async () => {
     const code = await generateCode();
     const before = (await expectOk(
       await api(h).get(`/api/collections/players/records/${player.id}`),
@@ -101,11 +101,25 @@ describe("POST /api/piles/claim", () => {
     expect(claims.items[0]?.consumed_at).toBeTruthy();
   });
 
-  it("rejects an already-consumed code", async () => {
+  it("a standing code can be claimed again for a second match, not single-use", async () => {
     const code = await generateCode();
-    await claimPost(h, { code, placement: 1, points: 100 });
-    const second = await claimPost(h, { code, placement: 1, points: 100 });
-    expect(second.status).toBe(409);
+    const before = (await expectOk(
+      await api(h).get(`/api/collections/players/records/${player.id}`),
+      "player before",
+    )) as { xp: number };
+
+    const first = await claimPost(h, { code, placement: 1, points: 100 });
+    expect(first.status).toBe(200);
+    const second = await claimPost(h, { code, placement: 2, points: 50 });
+    expect(second.status).toBe(200);
+
+    const after = (await expectOk(
+      await api(h).get(`/api/collections/players/records/${player.id}`),
+      "player after two claims",
+    )) as { xp: number };
+    // match 1 (won, placement 1): participate(10) + win(15) = 25.
+    // match 2 (lost, placement 2): participate(10) = 10.
+    expect(after.xp).toBe(before.xp + 35);
   });
 
   it("rejects an unknown code", async () => {

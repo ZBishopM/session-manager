@@ -10,13 +10,15 @@
  * as "voting" then immediately updated to "done" (match_finished.pb.js
  * only fires on that transition, not on create), and a match_players row.
  *
+ * A code is a standing link, not a one-time claim — piles-game persists
+ * it (localStorage) and reuses it for every round until the player
+ * generates a new one on /profile (which invalidates the old one) or
+ * clears it in piles-game. `consumed_at` is set on every use as a
+ * "last used at" marker, not a single-use gate.
+ *
  * `points` is stored for reference only — not converted into XP here.
  */
 routerAdd("POST", "/api/piles/claim", (e) => {
-  // routerAdd handlers run on a pooled VM per request, unlike cron/event
-  // hooks — a module-level const isn't reliably closed over across pool
-  // instances, so anything the handler needs must be declared inside it.
-  const CLAIM_MAX_AGE_MS = 15 * 60 * 1000;
   const core = require(`${__hooks}/_core.js`);
   const body = new DynamicModel({ code: "", placement: 0, points: 0 });
   try {
@@ -40,16 +42,6 @@ routerAdd("POST", "/api/piles/claim", (e) => {
   }
 
   try {
-    // .get() on a date-type field returns a DateTime object, always
-    // truthy regardless of its zero-ness — use getDateTime().isZero().
-    if (!claim.getDateTime("consumed_at").isZero()) {
-      return e.json(409, { ok: false, error: "code already used" });
-    }
-    const ageMs = Date.now() - claim.getDateTime("created").unix() * 1000;
-    if (ageMs > CLAIM_MAX_AGE_MS) {
-      return e.json(410, { ok: false, error: "code expired" });
-    }
-
     let pilesGame;
     try {
       pilesGame = $app.findFirstRecordByFilter("games", 'name = "Piles"');

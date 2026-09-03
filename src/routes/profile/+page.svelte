@@ -59,15 +59,19 @@
 
   let pilesCode: string | null = null;
   let generatingCode = false;
+  let pilesCodeCopied = false;
 
   async function linkPiles(): Promise<void> {
     if (!$user || generatingCode) return;
     generatingCode = true;
+    pilesCodeCopied = false;
     try {
-      const stale = await collection("piles_claims").getFullList({
-        filter: `player = "${$user.id}" && consumed_at = ""`,
+      // A player has at most one active code at a time — generating a new
+      // one replaces (invalidates) whatever was linked before.
+      const existing = await collection("piles_claims").getFullList({
+        filter: `player = "${$user.id}"`,
       });
-      for (const claim of stale) {
+      for (const claim of existing) {
         await collection("piles_claims").delete(claim.id);
       }
       const code = generateClaimCode();
@@ -77,6 +81,17 @@
       console.error(err);
     } finally {
       generatingCode = false;
+    }
+  }
+
+  async function copyPilesCode(): Promise<void> {
+    if (!pilesCode) return;
+    try {
+      await navigator.clipboard.writeText(pilesCode);
+      pilesCodeCopied = true;
+      setTimeout(() => (pilesCodeCopied = false), 2000);
+    } catch (err) {
+      console.error(err);
     }
   }
 
@@ -144,8 +159,8 @@
   <section class="mt-4 flex flex-col gap-2 rounded-2xl bg-slate-800/70 p-4">
     <p class="text-xs uppercase tracking-wide text-slate-400">Vincular Piles</p>
     <p class="text-xs text-slate-400">
-      Genera un código y escríbelo en Piles antes de terminar una partida para sumar el resultado
-      a este perfil.
+      Genera un código y escríbelo una vez en Piles — queda vinculado y suma el resultado de cada
+      partida a este perfil hasta que generes un código nuevo o lo borres en Piles.
     </p>
     <button
       type="button"
@@ -156,10 +171,19 @@
       {generatingCode ? "…" : "Generar código"}
     </button>
     {#if pilesCode}
-      <p class="font-mono text-lg tracking-widest text-emerald-300" data-testid="piles-code">
-        {pilesCode}
-      </p>
-      <p class="text-xs text-slate-500">Válido por 15 minutos.</p>
+      <div class="flex items-center gap-2">
+        <p class="font-mono text-lg tracking-widest text-emerald-300" data-testid="piles-code">
+          {pilesCode}
+        </p>
+        <button
+          type="button"
+          on:click={copyPilesCode}
+          data-testid="copy-piles-code"
+          class="rounded-md border border-slate-600 px-2 py-1 text-xs text-slate-300 hover:border-slate-400"
+        >
+          {pilesCodeCopied ? "Copiado" : "Copiar"}
+        </button>
+      </div>
     {/if}
   </section>
 
