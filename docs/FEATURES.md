@@ -32,7 +32,7 @@ Or simpler for a quick look at just the PocketBase side: `npm run test:integrati
 
 - [x] **v1** — Browse the catalog. `/games`.
 - [x] **v1** — Add a game: name, min/max players, categories, description, image. `/games/new` (must be logged in).
-  - Creating a game fires an AI call (Gemini) that generates achievements for it in the background. There's currently **no page that shows a game's achievements** — they're generated and stored, but not surfaced anywhere in the UI yet.
+  - Creating a game fires an AI call (Gemini) that generates achievement proposals for it in the background — as of v8 (below), a game's approved achievements and a "propose one yourself" form are on `/games/[id]`.
 
 ## Hosting a session
 
@@ -94,21 +94,34 @@ Or simpler for a quick look at just the PocketBase side: `npm run test:integrati
   - `pb_hooks/mail_config.pb.js` configures PocketBase's built-in SMTP mailer from `SMTP_HOST`/`SMTP_PORT`/`SMTP_USERNAME`/`SMTP_PASSWORD`/`SMTP_FROM` env vars on startup (unset = email stays disabled, same "skip and log" pattern as the Discord webhook). `weekly_matchmaker.pb.js` sends one personal email per invited player who has an email set — same invite link as the Discord/in-app versions.
   - Verified end-to-end with a real send through the production mail server, delivered to a real inbox without landing in spam.
 
+## Recording a match result — XP, wins, and achievements now actually happen
+
+- [x] **v8 (live, 8ccd680)** — **Was fully built but unreachable — now wired.** The host sees `MatchResultSheet` on `/session/[id]` once a game's been picked, marks who won (any count from 1 to N — free-for-all with one winner, or a whole team), optionally types each player's ranked placement (1st/2nd/3rd...) for games that rank results instead of a plain win/lose. Confirming writes `match_players`, marks the match `done`, and ends the session.
+  - That single write is what makes the *already-existing* backend pipeline (`pb_hooks/match_finished.pb.js`) actually run for the first time: XP gets awarded (`src/lib/core/xp.ts`), `players.xp`/`level` update, and any newly-unlocked achievements show as a toast (`AchievementToast.svelte`, also previously built and never rendered).
+  - "Partidas ganadas" now shows on `/profile` — no stored counter, a live count of `match_players` where `won = true`.
+
+## Achievements: anyone can propose one, only an admin approves it
+
+- [x] **v8 (live, 8ccd680)** — **New.** Achievements used to only come from Gemini auto-generation on a new game. Now: any logged-in player can propose one from a game's own page, `/games/[id]` (new — game detail didn't exist before this, only the catalog list and the "new game" form). Title, description, and a `trigger_expr` condition (with an inline cheat-sheet of the available stat variables and live syntax validation before you can submit).
+  - Every proposal — player-submitted or Gemini-generated — lands as `pending` and stays invisible to the matching pipeline until a superuser flips it to `approved` via the PocketBase admin dashboard (no new app UI for approval — the existing SSH-tunnel-only dashboard from today's earlier work is where that happens). Enforced server-side (`pb_hooks/achievement_proposal.pb.js`): the client can't self-approve no matter what it sends in the request.
+
+## Piles-game results link into your profile
+
+- [x] **v8 (live, 8ccd680)** — **New, cross-project.** [piles-game](https://github.com/ZBishopM/piles-game) is a separate, fully anonymous card game with no accounts of its own. `/profile` → "Vincular Piles" generates a short code; typed into Piles before a round ends, it's sent (purely client-side, from Piles's own `lobby.html`, no server changes there at all) to a new public session-manager endpoint that credits your real placement/win to your profile — same XP/achievement pipeline as any other match, via a synthetic session record. Guest play in Piles with no code entered is completely unaffected.
+
 ---
 
 ## Not yet possible (data model or component exists, but nothing wires it up)
 
 These are real gaps, not just missing polish — worth knowing before you go looking for a button that isn't there:
 
-- **Recording a match result** (who won, how long it took) — `MatchResultSheet.svelte` is fully built and tested but never imported into any route. A match can be voted on and get a game assigned, but nothing can ever mark it "done."
-- **XP and achievement unlocks** — the hook that computes these (`match_finished.pb.js`) only fires when a match transitions to `status: "done"`, which per the point above can never actually happen through the UI today. So XP/achievements are wired end-to-end in the backend but currently unreachable from the app.
-- **Achievement toasts** — `AchievementToast.svelte` is built and tested, never rendered anywhere.
-- **Ending a session** (`sessions.status = "ended"`) — no button anywhere sets this.
+- **Ending a session independent of a match result** — today `sessions.status` only ever becomes `"ended"` as a side effect of recording a match result (v8 above). There's no separate "end session without playing" action.
 - **Co-host assignment** — `sessions.co_host` field exists, nothing in the UI sets it.
 - **Kicking a participant** — `session_participants.status` supports `"kicked"`, no UI action for it.
 - **Spending a re-roll** — the count displays on `/profile`, nothing lets you use one.
 - **Favorite categories** — field exists on the player record, no UI to set it.
 - **Manual host tie-break on a vote tie** — per `docs/BUSINESS_RULES.md` a tie should let the host decide; v2 auto-resolves it by random pick instead (deliberate MVP simplification, not silently dropped — see `pendientes/gamesessions.md`).
+- **Placement isn't read by the achievement trigger DSL yet** — `match_players.placement` (v8) is stored but `evaluateTrigger`'s stat surface (`total_wins`, `wins_on_game`, etc.) doesn't include it. Fine for now since nothing has proposed a placement-based achievement yet; extend the DSL when one does.
 
 ## Coming next (per the matchmaking plan)
 
