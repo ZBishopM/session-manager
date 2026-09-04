@@ -12,16 +12,16 @@ Estos cuatro comandos deben terminar sin errores. Si uno falla, **investiga ante
 
 ```bash
 # 1. Type-check TS puro
-npm run typecheck
+pnpm run typecheck
 
 # 2. Type-check Svelte (más estricto que tsc en bloques reactivos)
-npm run check
+pnpm run check
 
 # 3. Tests unit (espera ~10s, ~227+ tests)
-npm test
+pnpm test
 
 # 4. Build estático (verifica que SvelteKit + Tailwind + PWA compilan)
-npm run build
+pnpm run build
 ```
 
 **Salida esperada del paso 3:**
@@ -38,9 +38,9 @@ Test Files  21 passed (21)
 Tres pipelines distintos generan código que se commitea. Si alguno difiere del manifest, CI falla. Estos comandos regeneran y avisan si hay drift:
 
 ```bash
-npm run check:migrations   # pb_migrations/1700000000_init.js  vs  schema.ts
-npm run check:hooks        # pb_hooks/_core.js                 vs  hooks-entry.ts
-npm run check:types        # src/lib/core/records.ts           vs  schema.ts
+pnpm run check:migrations   # pb_migrations/1700000000_init.js  vs  schema.ts
+pnpm run check:hooks        # pb_hooks/_core.js                 vs  hooks-entry.ts
+pnpm run check:types        # src/lib/core/records.ts           vs  schema.ts
 ```
 
 Cada uno corre el generador y luego `git diff --exit-code <archivo>`. **Si alguno reporta diff**, commiteá el archivo regenerado junto con tu cambio.
@@ -54,7 +54,7 @@ Cada uno corre el generador y luego `git diff --exit-code <archivo>`. **Si algun
 Levantan una instancia real de PocketBase contra los `pb_migrations/` y `pb_hooks/` actuales. Tarda ~30s la primera vez (descarga el binario), ~3s después.
 
 ```bash
-npm run test:integration
+pnpm run test:integration
 ```
 
 **Salida esperada:**
@@ -67,7 +67,7 @@ Test Files  3 passed (3)
 Si quieres ver el stdout/stderr de PB durante el test (útil para debuggear hooks):
 
 ```bash
-PB_DEBUG=1 npm run test:integration
+PB_DEBUG=1 pnpm run test:integration
 ```
 
 **Cuándo SALTARSELOS está bien**: si tu cambio toca solo presentación (CSS/Tailwind, copy de UI, refactor de un componente sin cambiar su API). En cualquier otro caso, córrelos.
@@ -77,7 +77,7 @@ PB_DEBUG=1 npm run test:integration
 ## D. Verificación visual (cambios de UI)
 
 ```bash
-npm run dev
+pnpm run dev
 ```
 
 Abre <http://localhost:5173>, navega manualmente por:
@@ -94,7 +94,7 @@ Para auth real necesitas PocketBase corriendo en local. Lo más simple:
 
 ```bash
 # Una sola vez:
-npm run fetch:pocketbase
+pnpm run fetch:pocketbase
 
 # En otra terminal, desde la raíz:
 ./.pocketbase/0.37.3/pocketbase.exe serve \

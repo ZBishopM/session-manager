@@ -6,15 +6,15 @@ What a real user can actually click through and do, grouped by area, each tagged
 
 **v1–v5 are all live** as of 2026-09-02 (commit `897d906`, deployed same day) — just use https://gamesessions.danassistantassistant.website, including from your phone.
 
-To run a not-yet-deployed change locally instead:
+To run a not-yet-deployed change locally instead (this repo uses `pnpm`, not `npm` — see `.env.example`'s neighbor `pnpm-workspace.yaml` for why):
 ```
-npm install
-npm run build:migrations && npm run build:hooks && npm run build:types
+pnpm install
+pnpm run build:migrations && pnpm run build:hooks && pnpm run build:types
 # then run a local PocketBase (see docs/DEPLOYMENT.md §4-6) with pb_hooks/ and
 # pb_migrations/ from this checkout, and separately:
-npm run dev
+pnpm run dev
 ```
-Or simpler for a quick look at just the PocketBase side: `npm run test:integration` spins up a real local PocketBase against the current schema/hooks (not the frontend, but confirms the backend is sound). `npm run test:e2e` goes one further: a real Chromium browser driven by Playwright against a real local PocketBase — the only layer that catches bugs involving actual browser behavior (autofill, native form validation, real navigation), which is exactly the class of bug in the fix right below.
+Or simpler for a quick look at just the PocketBase side: `pnpm run test:integration` spins up a real local PocketBase against the current schema/hooks (not the frontend, but confirms the backend is sound). `pnpm run test:e2e` goes one further: a real Chromium browser driven by Playwright against a real local PocketBase — the only layer that catches bugs involving actual browser behavior (autofill, native form validation, real navigation), which is exactly the class of bug in the fix right below.
 
 ---
 

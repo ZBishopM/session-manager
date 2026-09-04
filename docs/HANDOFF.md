@@ -52,8 +52,8 @@ session-manager/
 
 ## Invariantes que NO debes romper
 
-1. **El schema vive en `src/lib/core/schema.ts`.** No edites `pb_migrations/*.js` ni `src/lib/core/records.ts` a mano. Cambia el manifest y corre `npm run build:migrations && npm run build:types`. CI revienta si commiteas drift.
-2. **Los hooks JS no importan TS directamente.** Toda la lógica reutilizable se exporta desde `src/lib/core/hooks-entry.ts`, esbuild la bundlea a `pb_hooks/_core.js` (CJS, target es2020). Si añades una función al hook, exportarla desde `hooks-entry.ts` y correr `npm run build:hooks`.
+1. **El schema vive en `src/lib/core/schema.ts`.** No edites `pb_migrations/*.js` ni `src/lib/core/records.ts` a mano. Cambia el manifest y corre `pnpm run build:migrations && pnpm run build:types`. CI revienta si commiteas drift.
+2. **Los hooks JS no importan TS directamente.** Toda la lógica reutilizable se exporta desde `src/lib/core/hooks-entry.ts`, esbuild la bundlea a `pb_hooks/_core.js` (CJS, target es2020). Si añades una función al hook, exportarla desde `hooks-entry.ts` y correr `pnpm run build:hooks`.
 3. **Los hooks de PocketBase v0.23+ requieren `e.next()`** al final del callback. Sin él la cadena de eventos se corta y los siguientes hooks no se ejecutan. Wrappear en try/catch y loguear errores con `console.log` (van a stdout de PB y los ve PM2).
 4. **Los triggers de achievements pasan por nuestro DSL** (`evaluateTrigger` en `achievements.ts`), nunca `eval()` ni `Function()`. La salida de la IA se valida ANTES de persistirse. Si extiendes el DSL, añade tests en `achievements.test.ts` cubriendo el rechazo de input no permitido.
 5. **`liked` no es bool**. Es un `select` con valores `"like"`/`"dislike"`/`""`. PocketBase defaultea bool a `false`, lo que sería indistinguible de "votó 👎".
@@ -74,27 +74,27 @@ session-manager/
 |---|---|
 | Ver qué cambia ahora mismo | `git status -s` y `git diff` |
 | Verificación completa local | sigue [VERIFICATION.md](VERIFICATION.md) (5 minutos) |
-| Tests unit rápido | `npm test` |
-| Tests integration (descarga binario PB si falta) | `npm run test:integration` |
-| Tests E2E, navegador real (Playwright) | `npm run test:e2e` |
-| Type-check Svelte estricto | `npm run check` |
-| Type-check TS puro | `npm run typecheck` |
-| Build estático | `npm run build` |
-| Regenerar artefactos del manifest | `npm run build:migrations && npm run build:hooks && npm run build:types` |
-| Verificar que generados no driften | `npm run check:migrations && npm run check:hooks && npm run check:types` |
+| Tests unit rápido | `pnpm test` |
+| Tests integration (descarga binario PB si falta) | `pnpm run test:integration` |
+| Tests E2E, navegador real (Playwright) | `pnpm run test:e2e` |
+| Type-check Svelte estricto | `pnpm run check` |
+| Type-check TS puro | `pnpm run typecheck` |
+| Build estático | `pnpm run build` |
+| Regenerar artefactos del manifest | `pnpm run build:migrations && pnpm run build:hooks && pnpm run build:types` |
+| Verificar que generados no driften | `pnpm run check:migrations && pnpm run check:hooks && pnpm run check:types` |
 | Desplegar a VPS | `VPS_HOST=<ip> bash scripts/deploy.sh` |
 
 ## Cómo añadir cosas (recetas comunes)
 
 ### Añadir un campo a una colección
 1. Editar `src/lib/core/schema.ts`.
-2. `npm run build:migrations && npm run build:types`.
+2. `pnpm run build:migrations && pnpm run build:types`.
 3. **Para infra existente**: PocketBase NO migra automáticamente cambios de campos en una migración ya aplicada. Hay que crear una migración nueva. El generador (`build-migrations.ts`) soporta esto desde 2026-09-02: `1700000000_init.js` queda congelada a propósito (`INIT_COLLECTION_NAMES`, no cambia aunque `COLLECTIONS` crezca — ya está aplicada en prod), y una migración incremental nueva se agrega como un par `<TIMESTAMP>_<nombre>.js` + `write<Nombre>Migration()`, siguiendo el ejemplo de `writeMatchmakingMigration`. Para MVP en local simplemente borra `pb_data/data.db` y deja que se reaplique todo desde cero.
-4. `npm test` y `npm run test:integration`.
+4. `pnpm test` y `pnpm run test:integration`.
 
 ### Añadir un nuevo pb_hook
 1. Crear `pb_hooks/<name>.pb.js` siguiendo el patrón de `match_finished.pb.js`: try/catch wrapper, `e.next()` al final, `require(\`${__hooks}/_core.js\`)` para acceder a la lógica pura.
-2. Si necesitas exponer una función al hook, exportarla desde `src/lib/core/hooks-entry.ts` y correr `npm run build:hooks`.
+2. Si necesitas exponer una función al hook, exportarla desde `src/lib/core/hooks-entry.ts` y correr `pnpm run build:hooks`.
 3. Añadir un test de integración en `tests/integration/<feature>.integration.test.ts` que cree datos vía API REST, dispare el evento y verifique los efectos.
 
 ### Añadir una ruta SvelteKit
@@ -124,5 +124,5 @@ session-manager/
 - **`onMount` flakiness en tests**: documentado arriba; usa `$:` cuando necesites efectos al init de un componente.
 - **Cleanup entre renders**: registrado en `vitest-setup.ts` (`afterEach(cleanup)`). Si ves "Found multiple elements", probablemente estás haciendo `rerender` — usa renders separados con `unmount()`.
 - **PWA no se actualiza al instante**: `registerType: "autoUpdate"` recarga al siguiente nav. Si quieres prompt manual, cambiar a `"prompt"` en `pwa-config.ts`.
-- **PB hooks no muestran logs en CI a menos que falle algo**: el harness los captura siempre. Para verlos en local: `PB_DEBUG=1 npm run test:integration`.
+- **PB hooks no muestran logs en CI a menos que falle algo**: el harness los captura siempre. Para verlos en local: `PB_DEBUG=1 pnpm run test:integration`.
 - **E2E (Playwright) y la carrera de hidratación de SvelteKit**: SvelteKit renderiza el HTML inicial por SSR y luego hidrata en cliente. Un click de Playwright que llega antes de que la hidratación conecte los listeners no hace nada — pero pasa los checks de "actionability" de Playwright igual (el elemento existe, es visible, está habilitado), así que falla en silencio: el estado nunca cambia y no hay excepción que lo delate. Esto pasó de verdad armando `tests/e2e/auth.spec.ts` — parecía un bug real de la app (atascado en `/auth`) durante un rato. Mitigación: `page.waitForLoadState("networkidle")` después de cada `page.goto()`, antes de la primera interacción (ver `gotoAuth()` en ese archivo).

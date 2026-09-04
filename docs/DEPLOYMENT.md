@@ -199,10 +199,10 @@ Desde tu máquina local, en el repo:
 
 ```bash
 # Compila todo lo derivado del manifest TS
-npm run build:migrations
-npm run build:hooks
-npm run build:types
-npm run build           # SvelteKit estático -> build/
+pnpm run build:migrations
+pnpm run build:hooks
+pnpm run build:types
+pnpm run build           # SvelteKit estático -> build/
 
 # Sube
 rsync -az --delete build/         ubuntu@TU-IP:/home/ubuntu/session-manager/frontend/

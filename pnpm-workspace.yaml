@@ -1,0 +1,9 @@
+# Blocks postinstall/build scripts for every dependency by default —
+# only these are known-needed and explicitly allowed to run theirs.
+# esbuild's script just fetches the correct platform-native binary.
+# svelte-preprocess is an unused transitive dep of svelte-check (this
+# project uses vitePreprocess() in svelte.config.js, not
+# svelte-preprocess) — deliberately left blocked, not needed.
+allowBuilds:
+  esbuild: true
+  svelte-preprocess: false

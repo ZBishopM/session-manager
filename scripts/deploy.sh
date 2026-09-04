@@ -37,12 +37,12 @@ VPS_APP_DIR=${VPS_APP_DIR:-/var/www/session-manager}
 REMOTE="${VPS_USER}@${VPS_HOST}"
 
 echo "[deploy] regenerating migrations / hooks / types from manifest"
-npm run build:migrations >/dev/null
-npm run build:hooks >/dev/null
-npm run build:types >/dev/null
+pnpm run build:migrations >/dev/null
+pnpm run build:hooks >/dev/null
+pnpm run build:types >/dev/null
 
 echo "[deploy] building frontend (adapter-static)"
-npm run build >/dev/null
+pnpm run build >/dev/null
 
 echo "[deploy] syncing artifacts to ${REMOTE}:${VPS_APP_DIR}"
 rsync -az --delete --info=progress2 build/             "${REMOTE}:${VPS_APP_DIR}/build/"
