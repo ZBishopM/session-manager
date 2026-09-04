@@ -45,7 +45,7 @@ test.describe("signup", () => {
     await page.getByTestId("submit").click();
 
     await expect(page).toHaveURL(/\/profile/);
-    await expect(page.getByText(nickname)).toBeVisible();
+    await expect(page.getByRole("heading", { name: nickname })).toBeVisible();
   });
 
   test("passcode field is new-password in signup mode (not current-password)", async ({ page }) => {
@@ -111,7 +111,7 @@ test.describe("login", () => {
     await page.getByTestId("submit").click();
 
     await expect(page).toHaveURL(/\/profile/);
-    await expect(page.getByText(nickname)).toBeVisible();
+    await expect(page.getByRole("heading", { name: nickname })).toBeVisible();
   });
 
   test("passcode field is current-password in login mode", async ({ page }) => {
