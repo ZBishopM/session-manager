@@ -133,6 +133,9 @@
     <label for="email" class="text-xs uppercase tracking-wide text-slate-400">
       Correo para notificaciones de matchmaking
     </label>
+    {#if $user.email}
+      <p class="text-xs text-emerald-300">✓ Guardado: {$user.email}</p>
+    {/if}
     <div class="flex gap-2">
       <input
         id="email"
