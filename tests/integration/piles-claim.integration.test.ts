@@ -80,9 +80,10 @@ describe("POST /api/piles/claim with an empty games catalog", () => {
       "games after",
     )) as { totalItems: number; items: Array<{ name: string; created_by: string }> };
     expect(after.totalItems).toBe(1);
-    expect(after.items[0].name).toBe("Piles");
+    const game = after.items[0];
+    expect(game?.name).toBe("Piles");
     // Debe pertenecer al jugador: update/delete exigen created_by = auth.id.
-    expect(after.items[0].created_by).toBe(player.id);
+    expect(game?.created_by).toBe(player.id);
 
     // Y el resultado llega de verdad al perfil.
     const mp = (await expectOk(
@@ -90,7 +91,7 @@ describe("POST /api/piles/claim with an empty games catalog", () => {
       "match_players",
     )) as { totalItems: number; items: Array<{ won: boolean }> };
     expect(mp.totalItems).toBe(1);
-    expect(mp.items[0].won).toBe(true);
+    expect(mp.items[0]?.won).toBe(true);
   });
 
   it("reuses the same catalog entry on later claims instead of duplicating it", async () => {
