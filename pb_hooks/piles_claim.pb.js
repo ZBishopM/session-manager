@@ -27,7 +27,13 @@ routerAdd("POST", "/api/piles/claim", (e) => {
     return e.json(400, { ok: false, error: "invalid request body" });
   }
 
-  const code = (body.code || "").toString().trim();
+  // Los códigos se generan solo con mayúsculas (ver generateClaimCode en
+  // /profile). El campo donde se pega en piles-game se ve en mayúsculas por
+  // CSS (text-transform), que NO cambia el valor enviado: quien lo escribía
+  // a mano en minúsculas veía "ZKYAXM" y mandaba "zkyaxm", y el filtro de
+  // SQLite distingue mayúsculas, así que salía "unknown code" sin pista de
+  // por qué. Normalizar aquí cierra esa trampa.
+  const code = (body.code || "").toString().trim().toUpperCase();
   const placement = Number(body.placement) || null;
   const points = Number(body.points) || 0;
   if (!code) {
@@ -36,7 +42,9 @@ routerAdd("POST", "/api/piles/claim", (e) => {
 
   let claim;
   try {
-    claim = $app.findFirstRecordByFilter("piles_claims", `code = "${code}"`);
+    // Parametrizado: este endpoint es público y sin auth, así que el código
+    // no puede interpolarse crudo en el filtro.
+    claim = $app.findFirstRecordByFilter("piles_claims", "code = {:code}", { code });
   } catch (err) {
     return e.json(404, { ok: false, error: "unknown code" });
   }

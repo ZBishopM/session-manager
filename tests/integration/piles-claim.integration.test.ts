@@ -126,4 +126,31 @@ describe("POST /api/piles/claim", () => {
     const res = await claimPost(h, { code: "NOPE12", placement: 1, points: 0 });
     expect(res.status).toBe(404);
   });
+
+  // 2026-09-05: reported as "no se pudo vincular: unknown code" at game-over.
+  // Codes are generated uppercase and piles-game's input only *looks*
+  // uppercase (CSS text-transform doesn't change the value), so a
+  // hand-typed code was sent lowercase and missed a case-sensitive filter.
+  it("accepts a code typed in lowercase", async () => {
+    const code = await generateCode();
+    const res = await claimPost(h, { code: code.toLowerCase(), placement: 1, points: 0 });
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { ok: boolean }).ok).toBe(true);
+  });
+
+  it("accepts a code with stray whitespace around it", async () => {
+    const code = await generateCode();
+    const res = await claimPost(h, { code: `  ${code}  `, placement: 2, points: 0 });
+    expect(res.status).toBe(200);
+  });
+
+  // This endpoint is public and unauthenticated, so the code must never be
+  // interpolated into the filter expression raw.
+  it("does not let a crafted code break out of the lookup filter", async () => {
+    await generateCode();
+    for (const attack of ['" || code != "', 'X" || "1"="1', '" || id != "']) {
+      const res = await claimPost(h, { code: attack, placement: 1, points: 0 });
+      expect(res.status).toBe(404);
+    }
+  });
 });
