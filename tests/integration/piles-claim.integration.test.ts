@@ -38,6 +38,72 @@ async function claimPost(h: Harness, body: unknown): Promise<Response> {
   });
 }
 
+// 2026-09-05: production's games catalog was empty, so every claim died on
+// `Piles game not configured` and no piles result was ever credited — the
+// "Piles" entry was only ever going to exist if someone made it by hand,
+// with exactly that name. The endpoint now bootstraps it instead.
+describe("POST /api/piles/claim with an empty games catalog", () => {
+  let h: Harness;
+  let player: { id: string; token: string };
+
+  beforeAll(async () => {
+    h = await startPocketBase();
+    player = await createPlayer(h, "noel");
+  }, 90_000);
+
+  afterAll(async () => {
+    if (h) await h.stop();
+  });
+
+  it("creates the Piles catalog entry on the first claim and credits the player", async () => {
+    const games = (await expectOk(
+      await api(h).get("/api/collections/games/records"),
+      "games before",
+    )) as { totalItems: number };
+    expect(games.totalItems).toBe(0);
+
+    const claim = (await expectOk(
+      await fetch(`${h.baseUrl}/api/collections/piles_claims/records`, {
+        method: "POST",
+        headers: { "content-type": "application/json", Authorization: player.token },
+        body: JSON.stringify({ player: player.id, code: "BOOT12" }),
+      }),
+      "create claim",
+    )) as IdRecord;
+    expect(claim.code).toBe("BOOT12");
+
+    const res = await claimPost(h, { code: "BOOT12", placement: 1, points: 10 });
+    expect(res.status).toBe(200);
+
+    const after = (await expectOk(
+      await api(h).get("/api/collections/games/records"),
+      "games after",
+    )) as { totalItems: number; items: Array<{ name: string; created_by: string }> };
+    expect(after.totalItems).toBe(1);
+    expect(after.items[0].name).toBe("Piles");
+    // Debe pertenecer al jugador: update/delete exigen created_by = auth.id.
+    expect(after.items[0].created_by).toBe(player.id);
+
+    // Y el resultado llega de verdad al perfil.
+    const mp = (await expectOk(
+      await api(h).get(`/api/collections/match_players/records?filter=player="${player.id}"`),
+      "match_players",
+    )) as { totalItems: number; items: Array<{ won: boolean }> };
+    expect(mp.totalItems).toBe(1);
+    expect(mp.items[0].won).toBe(true);
+  });
+
+  it("reuses the same catalog entry on later claims instead of duplicating it", async () => {
+    const res = await claimPost(h, { code: "BOOT12", placement: 3, points: 5 });
+    expect(res.status).toBe(200);
+    const games = (await expectOk(
+      await api(h).get("/api/collections/games/records"),
+      "games after second claim",
+    )) as { totalItems: number };
+    expect(games.totalItems).toBe(1);
+  });
+});
+
 describe("POST /api/piles/claim", () => {
   let h: Harness;
   let player: { id: string; token: string };

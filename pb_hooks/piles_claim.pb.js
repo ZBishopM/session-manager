@@ -50,17 +50,33 @@ routerAdd("POST", "/api/piles/claim", (e) => {
   }
 
   try {
+    const playerId = claim.get("player");
+
+    // El catálogo necesita una entrada "Piles" para colgar de ella la
+    // partida sintética. Antes tenía que crearla alguien a mano en
+    // /games/new y, si faltaba, cada partida terminaba en un 500 opaco
+    // ("Piles game not configured") — que es justo lo que pasaba: el
+    // catálogo estaba vacío y ningún resultado se llegó a acreditar nunca.
+    // Se crea sola en el primer reclamo, a nombre de quien lo reclama (así
+    // puede editarla o borrarla desde la app, que es lo que exigen sus
+    // reglas de update/delete).
     let pilesGame;
     try {
-      pilesGame = $app.findFirstRecordByFilter("games", 'name = "Piles"');
+      pilesGame = $app.findFirstRecordByFilter("games", "name = {:name}", { name: "Piles" });
     } catch (err) {
-      return e.json(500, { ok: false, error: "Piles game not configured" });
+      pilesGame = new Record($app.findCollectionByNameOrId("games"));
+      pilesGame.set("name", "Piles");
+      pilesGame.set("min_players", 2);
+      pilesGame.set("max_players", 8);
+      pilesGame.set("description", "Juego de cartas multijugador. Resultados vinculados desde piles-game.");
+      pilesGame.set("created_by", playerId);
+      $app.save(pilesGame);
+      console.log(`[piles_claim] created the "Piles" catalog entry (owner ${playerId})`);
     }
 
     claim.set("consumed_at", new DateTime());
     $app.save(claim);
 
-    const playerId = claim.get("player");
     const now = new DateTime();
 
     const session = new Record($app.findCollectionByNameOrId("sessions"));
