@@ -51,12 +51,12 @@ onRecordAfterCreateSuccess((e) => {
     });
   } catch (err) {
     console.log(`[game_created] Gemini API call failed: ${err}`);
-    return;
+    return e.next();
   }
 
   if (res.statusCode < 200 || res.statusCode >= 300) {
     console.log(`[game_created] Gemini returned ${res.statusCode}: ${res.raw}`);
-    return;
+    return e.next();
   }
 
   let parsedResponse;
@@ -64,7 +64,7 @@ onRecordAfterCreateSuccess((e) => {
     parsedResponse = JSON.parse(res.raw);
   } catch (err) {
     console.log(`[game_created] Could not parse Gemini response: ${err}`);
-    return;
+    return e.next();
   }
 
   const text = core.extractGeminiText(parsedResponse);

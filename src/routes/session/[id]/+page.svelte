@@ -55,7 +55,57 @@
       void goto(`/auth?next=${encodeURIComponent(`/session/${id}`)}`);
       return;
     }
-    void load();
+    void load().then(subscribeRealtime);
+  });
+
+  // Realtime (SSE) en vez de reconsultar a ciegas tras cada escritura.
+  //
+  // Los hooks After*Success de PocketBase corren DESPUES de que la respuesta
+  // de la peticion ya salio, asi que quien vota no ve el resultado en su
+  // propia respuesta. Esto se parcheaba con dos reconsultas (0 ms y 600 ms)
+  // que en produccion llegaban tarde: votabas y "no pasaba nada". Es tambien
+  // lo que enmascaro durante meses el ReferenceError de tryCloseVoting.
+  //
+  // PocketBase ya emite SSE y nginx ya lleva proxy_buffering off para ello
+  // (ADR-3, docs/ARCHITECTURE.md); solo faltaba usarlo.
+  //
+  // Nos suscribimos a "*" y filtramos en el cliente: un filtro de servidor
+  // depende de la listRule de cada coleccion y aqui hablamos de decenas de
+  // registros, no de miles.
+  let unsubscribers: Array<() => void> = [];
+
+  async function subscribeRealtime(): Promise<void> {
+    if (!session) return;
+    const sessionId = session.id;
+    try {
+      unsubscribers = await Promise.all([
+        collection("sessions").subscribe(sessionId, (e) => {
+          session = e.record;
+        }),
+        collection("matches").subscribe("*", (e) => {
+          if (e.record.session !== sessionId) return;
+          void loadMatch(sessionId);
+        }),
+        collection("session_participants").subscribe("*", (e) => {
+          if (e.record.session !== sessionId) return;
+          void loadParticipants(sessionId);
+        }),
+        collection("match_players").subscribe("*", (e) => {
+          if (match && e.record.match === match.id) void loadRoster(match.id);
+        }),
+        collection("player_achievements").subscribe("*", (e) => {
+          if (e.action !== "create" || e.record.player !== me?.id) return;
+          void showAchievementToast(e.record.achievement);
+        }),
+      ]);
+    } catch (err) {
+      // Sin SSE la pagina sigue funcionando: solo deja de refrescarse sola.
+      console.error(err);
+    }
+  }
+
+  onDestroy(() => {
+    for (const unsubscribe of unsubscribers) unsubscribe();
   });
 
   async function load(): Promise<void> {
@@ -63,13 +113,10 @@
     error = null;
     try {
       const found = await collection("sessions").getOne(id);
-      const list = await collection("session_participants").getList(1, 200, {
-        filter: `session = "${found.id}"`,
-        skipTotal: false,
-      });
       session = found;
-      participantCount = list.totalItems;
-      joined = list.items.some((p) => p.player === me?.id);
+      // Antes que loadMatch: los juegos elegibles se filtran por
+      // participantCount.
+      await loadParticipants(found.id);
 
       if (found.status === "active") {
         await loadMatch(found.id);
@@ -81,6 +128,18 @@
     } finally {
       loading = false;
     }
+  }
+
+  /** Cuantos hay y si estas tu, siempre releido del servidor. Llevar la
+   *  cuenta a mano se desincronizaba: el anfitrion se veia fuera de su propia
+   *  sesion mientras el contador marcaba 1. */
+  async function loadParticipants(sessionId: string): Promise<void> {
+    const list = await collection("session_participants").getList(1, 200, {
+      filter: `session = "${sessionId}"`,
+      skipTotal: false,
+    });
+    participantCount = list.totalItems;
+    joined = list.items.some((p) => p.player === me?.id);
   }
 
   async function loadMatch(sessionId: string): Promise<void> {
@@ -229,8 +288,7 @@
         status: "present",
         joined_at: new Date().toISOString(),
       });
-      joined = true;
-      participantCount += 1;
+      await loadParticipants(session.id);
     } catch (err) {
       error = "No se pudo unir a la sesión. Probá de nuevo.";
       console.error(err);
@@ -277,16 +335,9 @@
       }
       myVote = e.detail.gameId;
 
-      // The server-side hook resolves the match after everyone's voted,
-      // but After*Success hooks run after this request's response is
-      // already sent — refetch once immediately, then once more shortly
-      // after in case the hook hadn't finished yet. No realtime in this
-      // app (see docs/HANDOFF.md), so this short poll is the pragmatic
-      // stand-in rather than leaving the UI stuck on stale state.
+      // Una lectura para reflejar tu propio voto. Cuando el hook cierre la
+      // votacion llegara por SSE, sin sondeo.
       await loadMatch(session!.id);
-      if (!matchGame) {
-        setTimeout(() => void loadMatch(session!.id), 600);
-      }
     } catch (err) {
       error = "No se pudo registrar tu voto.";
       console.error(err);
@@ -301,7 +352,6 @@
     if (!match || !matchGame || !session || recordingResult) return;
     recordingResult = true;
     error = null;
-    const beforeIso = new Date().toISOString();
     const { winnerIds, durationSeconds, placements } = e.detail;
     try {
       // Las filas ya existen desde que cada uno se apuntó: aquí solo se
@@ -322,8 +372,7 @@
       // La sesión NO se cierra aquí: sigue abierta para más partidas hasta
       // que el anfitrión la termine.
       match = { ...match, status: "done", duration_seconds: durationSeconds };
-
-      if (me) await pollForNewAchievements(matchGame.id, beforeIso);
+      // Los logros que desbloquee match_finished.pb.js llegan por SSE.
     } catch (err) {
       error = "No se pudo registrar el resultado.";
       console.error(err);
@@ -332,39 +381,23 @@
     }
   }
 
-  interface AchievementExpand {
-    id: string;
-    title: string;
-    description: string;
-    rarity: string;
-  }
-
-  async function pollForNewAchievements(gameId: string, sinceIso: string): Promise<void> {
-    // Same "poll after write" workaround as handleVote above —
-    // match_finished.pb.js's After*Success write lands after this
-    // request's own response, so re-check a couple times shortly after.
-    for (const delay of [0, 700, 1600]) {
-      if (delay) await new Promise((r) => setTimeout(r, delay));
-      try {
-        const unlocks = await collection("player_achievements").getFullList({
-          filter: `player = "${me!.id}" && achievement.game = "${gameId}" && unlocked_at >= "${sinceIso}"`,
-          expand: "achievement",
-        });
-        if (unlocks.length > 0) {
-          unlockedToasts = unlocks
-            .map((u) => (u as unknown as { expand?: { achievement?: AchievementExpand } }).expand?.achievement)
-            .filter((a): a is AchievementExpand => !!a)
-            .map((a) => ({
-              id: a.id,
-              title: a.title,
-              description: a.description,
-              rarity: a.rarity as ToastAchievement["rarity"],
-            }));
-          return;
-        }
-      } catch (err) {
-        console.error(err);
-      }
+  /** Un logro desbloqueado para mi mientras estoy en la pagina. El evento
+   *  solo trae el id, asi que se lee el logro para el toast. */
+  async function showAchievementToast(achievementId: string): Promise<void> {
+    if (unlockedToasts.some((t) => t.id === achievementId)) return;
+    try {
+      const a = await collection("achievements").getOne(achievementId);
+      unlockedToasts = [
+        ...unlockedToasts,
+        {
+          id: a.id,
+          title: a.title,
+          description: a.description,
+          rarity: a.rarity as ToastAchievement["rarity"],
+        },
+      ];
+    } catch (err) {
+      console.error(err);
     }
   }
 

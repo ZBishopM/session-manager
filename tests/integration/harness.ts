@@ -187,6 +187,63 @@ export function api(h: Harness): ApiClient {
   };
 }
 
+/**
+ * Un ApiClient autenticado como jugador normal, no como superusuario.
+ *
+ * Existe por una razón concreta: los tests de integración escribían todo
+ * como superusuario y los unitarios mockean PocketBase, así que ninguna capa
+ * recorría el camino de un jugador de verdad. Por eso pasó desapercibido
+ * durante meses que match_players y matches.update eran superuser-only y que
+ * registrar el resultado de una partida NUNCA funcionó desde el navegador.
+ *
+ * El jugador se crea con el token de superusuario (players.createRule es
+ * abierta para el registro, pero así no dependemos de ello) y a partir de
+ * ahí todas las peticiones van con su propio token.
+ */
+export async function asPlayer(
+  h: Harness,
+  nickname: string,
+  passcode = "1234",
+): Promise<{ id: string; client: ApiClient }> {
+  const created = (await expectOk(
+    await api(h).post("/api/collections/players/records", {
+      username: nickname,
+      password: passcode,
+      passwordConfirm: passcode,
+      nickname,
+      xp: 0,
+      level: 1,
+      re_rolls: 0,
+    }),
+    `create player ${nickname}`,
+  )) as { id: string };
+
+  const auth = (await expectOk(
+    await fetch(`${h.baseUrl}/api/collections/players/auth-with-password`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ identity: nickname, password: passcode }),
+    }),
+    `auth player ${nickname}`,
+  )) as { token: string };
+
+  const headers = { "content-type": "application/json", Authorization: auth.token };
+  const client: ApiClient = {
+    get: (path) => fetch(`${h.baseUrl}${path}`, { headers: { Authorization: auth.token } }),
+    post: (path, body) =>
+      fetch(`${h.baseUrl}${path}`, { method: "POST", headers, body: JSON.stringify(body) }),
+    patch: (path, body) =>
+      fetch(`${h.baseUrl}${path}`, { method: "PATCH", headers, body: JSON.stringify(body) }),
+    del: (path) =>
+      fetch(`${h.baseUrl}${path}`, {
+        method: "DELETE",
+        headers: { Authorization: auth.token },
+      }),
+  };
+
+  return { id: created.id, client };
+}
+
 export async function expectOk(res: Response, ctx: string): Promise<unknown> {
   if (!res.ok) {
     const text = await res.text();
