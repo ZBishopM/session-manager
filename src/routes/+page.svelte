@@ -1,6 +1,34 @@
 <script lang="ts">
+  import { onMount, onDestroy } from "svelte";
   import { isAuthenticated } from "$lib/auth.js";
+  import { collection } from "$lib/pb.js";
+  import { elapsedSince } from "$lib/elapsed.js";
   import { user } from "$lib/stores/user.js";
+  import type { SessionsRecord } from "$core/records.js";
+
+  // Si ya estás dentro de una sesión, lo primero que tienes que ver es cuál
+  // y cuánto lleva abierta — no un botón para crear otra.
+  let active: SessionsRecord | null = null;
+  let elapsed = "";
+
+  const tick = setInterval(() => { elapsed = elapsedSince(active?.started_at); }, 1000);
+  onDestroy(() => clearInterval(tick));
+
+  onMount(async () => {
+    if (!$user || !isAuthenticated()) return;
+    try {
+      const mine = await collection("session_participants").getFullList({
+        filter: `player = "${$user.id}" && status != "left"`,
+      });
+      for (const p of mine) {
+        const s = await collection("sessions").getOne(p.session);
+        if (s.status !== "ended") { active = s; break; }
+      }
+      elapsed = elapsedSince(active?.started_at);
+    } catch (err) {
+      console.error(err);
+    }
+  });
 </script>
 
 <svelte:head><title>Session Manager</title></svelte:head>
@@ -13,6 +41,19 @@
 </section>
 
 <nav class="flex flex-col gap-3">
+  {#if active}
+    <a
+      href="/session/{active.id}"
+      data-testid="active-session"
+      class="rounded-2xl border border-emerald-500/40 bg-emerald-500/10 p-4 text-slate-100"
+    >
+      <p class="text-xs uppercase tracking-wide text-emerald-300">Sesión en marcha</p>
+      <p class="mt-0.5 text-base font-semibold">
+        {active.status === "active" ? "Jugando" : "Sala abierta"} · ⏱ {elapsed}
+      </p>
+      <p class="text-xs text-slate-400">Volver a la sesión →</p>
+    </a>
+  {/if}
   {#if $user && isAuthenticated()}
     <a
       href="/profile"

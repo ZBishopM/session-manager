@@ -1,5 +1,7 @@
 <script lang="ts">
   import { createEventDispatcher } from "svelte";
+  import QrCode from "$lib/components/QrCode.svelte";
+  import { joinUrl } from "$lib/qr.js";
   import type { SessionsRecord } from "$core/records.js";
 
   export let session: SessionsRecord | null;
@@ -10,6 +12,13 @@
   export let joining: boolean = false;
 
   const dispatch = createEventDispatcher<{ join: void }>();
+
+  // El QR vive aquí y no solo en /host: si el anfitrión sale de esa pantalla
+  // ya no podía volver a compartirlo.
+  let showQr = false;
+  $: shareUrl = session?.qr_token
+    ? joinUrl(session.qr_token, typeof window === "undefined" ? "" : window.location.origin)
+    : "";
 
   $: statusLabel =
     session?.status === "created"
@@ -35,6 +44,17 @@
       <strong>{participantCount}</strong>
       <span>{participantCount === 1 ? "jugador" : "jugadores"} en la sala</span>
     </div>
+    {#if session.status !== "ended" && shareUrl}
+      <button class="qr-toggle" type="button" data-testid="toggle-qr" on:click={() => (showQr = !showQr)}>
+        {showQr ? "Ocultar QR" : "Compartir QR"}
+      </button>
+      {#if showQr}
+        <div class="qr" data-testid="session-qr">
+          <QrCode data={shareUrl} />
+          <code>{session.qr_token}</code>
+        </div>
+      {/if}
+    {/if}
     {#if joined}
       <p class="joined" data-testid="joined">Ya estás dentro ✓</p>
     {:else}
@@ -54,6 +74,25 @@
 </section>
 
 <style>
+  .qr-toggle {
+    width: 100%;
+    margin-bottom: 0.6rem;
+    padding: 0.55rem 1rem;
+    border-radius: 999px;
+    border: 1px solid #475569;
+    background: transparent;
+    color: #cbd5e1;
+    font-size: 0.85rem;
+    cursor: pointer;
+  }
+  .qr {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.4rem;
+    margin-bottom: 0.8rem;
+  }
+  .qr code { font-size: 0.75rem; color: #94a3b8; }
   .lobby {
     background: #1e293b;
     border-radius: 14px;

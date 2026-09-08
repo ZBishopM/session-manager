@@ -1,9 +1,10 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, onDestroy } from "svelte";
   import { page } from "$app/stores";
   import { goto } from "$app/navigation";
   import { isAuthenticated, currentUser } from "$lib/auth.js";
   import { collection } from "$lib/pb.js";
+  import { elapsedSince } from "$lib/elapsed.js";
   import { RANDOM_VOTE, type RandomVote } from "$core/voting.js";
   import type { SessionsRecord, MatchesRecord, GamesRecord } from "$core/records.js";
   import SessionLobby from "$lib/components/SessionLobby.svelte";
@@ -29,6 +30,20 @@
 
   let resultPlayers: MatchPlayerInfo[] = [];
   let recordingResult = false;
+
+  // Reloj de la sesión. La sesión dura hasta que el anfitrión la corta, así
+  // que lo que importa es cuánto lleva abierta, no cuánto dura una partida.
+  let elapsed = "";
+  const tick = setInterval(() => { elapsed = elapsedSince(session?.started_at); }, 1000);
+  onDestroy(() => clearInterval(tick));
+  $: elapsed = elapsedSince(session?.started_at);
+
+  // Quién juega ESTA partida. Estar en la sesión no es estar en la partida:
+  // se entra y se sale entre partidas, y cada una se apunta por separado.
+  let myMatchRowId: string | null = null;
+  let togglingRoster = false;
+  let startingMatch = false;
+  let endingSession = false;
   let unlockedToasts: ToastAchievement[] = [];
 
   $: id = $page.params.id ?? "";
@@ -82,21 +97,7 @@
 
       if (match.game) {
         matchGame = await collection("games").getOne(match.game);
-        if (match.status !== "done") {
-          const participants = await collection("session_participants").getFullList({
-            filter: `session = "${sessionId}" && (status = "present" || status = "playing")`,
-          });
-          resultPlayers = await Promise.all(
-            participants.map(async (p) => {
-              try {
-                const player = await collection("players").getOne(p.player);
-                return { id: p.player, nickname: player.nickname };
-              } catch {
-                return { id: p.player, nickname: "?" };
-              }
-            }),
-          );
-        }
+        await loadRoster(match.id);
         return;
       }
 
@@ -114,6 +115,106 @@
       }
     } catch (err) {
       console.error(err);
+    }
+  }
+
+  /** Los apuntados a esta partida. La fila de match_players se crea al
+   *  apuntarse, no al registrar el resultado: así "quién juega" existe
+   *  durante la partida y no solo al final. `won` se rellena después. */
+  async function loadRoster(matchId: string): Promise<void> {
+    const rows = await collection("match_players").getFullList({
+      filter: `match = "${matchId}"`,
+    });
+    myMatchRowId = rows.find((r) => r.player === me?.id)?.id ?? null;
+    resultPlayers = await Promise.all(
+      rows.map(async (r) => {
+        try {
+          const player = await collection("players").getOne(r.player);
+          return { id: r.player, nickname: player.nickname };
+        } catch {
+          return { id: r.player, nickname: "?" };
+        }
+      }),
+    );
+  }
+
+  /** Apuntarse o borrarse de la partida actual. Borrarse es quitar la fila:
+   *  no hay "he dicho que no", simplemente no estás en esta partida. Vuelve
+   *  a preguntarse en la siguiente. */
+  async function toggleRoster(): Promise<void> {
+    if (!match || !me || togglingRoster) return;
+    togglingRoster = true;
+    error = null;
+    try {
+      if (myMatchRowId) {
+        await collection("match_players").delete(myMatchRowId);
+      } else {
+        await collection("match_players").create({ match: match.id, player: me.id });
+      }
+      await loadRoster(match.id);
+    } catch (err) {
+      error = "No se pudo cambiar tu participación.";
+      console.error(err);
+    } finally {
+      togglingRoster = false;
+    }
+  }
+
+  /** El anfitrión arranca cuando quiere; quien no se haya apuntado se queda
+   *  fuera de esta partida y entra en la siguiente. */
+  async function handleStartMatch(): Promise<void> {
+    if (!match || startingMatch) return;
+    startingMatch = true;
+    error = null;
+    try {
+      const updated = await collection("matches").update(match.id, {
+        status: "playing",
+        started_at: new Date().toISOString(),
+      });
+      match = updated;
+    } catch (err) {
+      error = "No se pudo empezar la partida.";
+      console.error(err);
+    } finally {
+      startingMatch = false;
+    }
+  }
+
+  /** Otra partida en la misma sesión: la reunión sigue. */
+  async function handleNewMatch(): Promise<void> {
+    if (!session || starting) return;
+    starting = true;
+    error = null;
+    try {
+      match = await collection("matches").create({ session: session.id, status: "voting" });
+      matchGame = null;
+      myVote = null;
+      resultPlayers = [];
+      myMatchRowId = null;
+      await loadMatch(session.id);
+    } catch (err) {
+      error = "No se pudo crear la partida.";
+      console.error(err);
+    } finally {
+      starting = false;
+    }
+  }
+
+  /** La sesión solo termina cuando el anfitrión lo dice. */
+  async function handleEndSession(): Promise<void> {
+    if (!session || endingSession) return;
+    endingSession = true;
+    error = null;
+    try {
+      session = await collection("sessions").update(session.id, {
+        status: "ended",
+        ended_at: new Date().toISOString(),
+      });
+    } catch (err) {
+      error = "No se pudo terminar la sesión.";
+      console.error(err);
+    } finally {
+      endingSession = false;
     }
   }
 
@@ -203,19 +304,24 @@
     const beforeIso = new Date().toISOString();
     const { winnerIds, durationSeconds, placements } = e.detail;
     try {
-      for (const p of resultPlayers) {
-        const data: Record<string, unknown> = { won: winnerIds.includes(p.id) };
-        if (placements?.[p.id]) data.placement = placements[p.id];
-        await collection("match_players").create({ match: match.id, player: p.id, ...data });
+      // Las filas ya existen desde que cada uno se apuntó: aquí solo se
+      // rellena el resultado.
+      const rows = await collection("match_players").getFullList({
+        filter: `match = "${match.id}"`,
+      });
+      for (const row of rows) {
+        const data: Record<string, unknown> = { won: winnerIds.includes(row.player) };
+        if (placements?.[row.player]) data.placement = placements[row.player];
+        await collection("match_players").update(row.id, data);
       }
       await collection("matches").update(match.id, {
         duration_seconds: durationSeconds,
         ended_at: new Date().toISOString(),
         status: "done",
       });
-      await collection("sessions").update(session.id, { status: "ended" });
+      // La sesión NO se cierra aquí: sigue abierta para más partidas hasta
+      // que el anfitrión la termine.
       match = { ...match, status: "done", duration_seconds: durationSeconds };
-      session = { ...session, status: "ended" };
 
       if (me) await pollForNewAchievements(matchGame.id, beforeIso);
     } catch (err) {
@@ -271,6 +377,9 @@
 
 <header class="mb-6 flex items-center justify-between gap-2">
   <a href="/" class="text-xs text-slate-400">← Inicio</a>
+  {#if elapsed && session?.status !== "ended"}
+    <span class="text-xs font-semibold text-slate-300" data-testid="session-elapsed">⏱ {elapsed}</span>
+  {/if}
   <span class="text-xs text-slate-500">ID <code>{id.slice(0, 6)}…</code></span>
 </header>
 
@@ -278,7 +387,7 @@
 
 {#if session && !loading}
   {#if isHost && session.status === "created"}
-    <button class="start-btn" type="button" disabled={starting} on:click={handleStart}>
+    <button class="start-btn" type="button" disabled={starting} data-testid="start-session" on:click={handleStart}>
       {starting ? "Iniciando…" : "Iniciar sesión"}
     </button>
   {/if}
@@ -286,10 +395,44 @@
   {#if session.status === "active" && match}
     {#if matchGame}
       <section class="picked">
-        <h2>Jugando</h2>
+        <h2>{match.status === "done" ? "Terminada" : "Jugando"}</h2>
         <p class="game-name">{matchGame.name}</p>
       </section>
-      {#if isHost && match.status !== "done"}
+
+      {#if match.status === "voting"}
+        <!-- Quién juega esta partida. Estar en la sesión no te mete
+             automáticamente: cada partida se elige por separado. -->
+        <section class="roster">
+          <h3>Quién juega ({resultPlayers.length})</h3>
+          <ul>
+            {#each resultPlayers as p (p.id)}
+              <li>{p.nickname}</li>
+            {:else}
+              <li class="muted">Nadie todavía</li>
+            {/each}
+          </ul>
+          <button
+            type="button"
+            class="roster-btn"
+            disabled={togglingRoster}
+            data-testid="toggle-roster"
+            on:click={toggleRoster}
+          >
+            {myMatchRowId ? "Me la salto" : "Me apunto"}
+          </button>
+          {#if isHost}
+            <button
+              type="button"
+              class="start-btn"
+              disabled={startingMatch || resultPlayers.length === 0}
+              data-testid="start-match"
+              on:click={handleStartMatch}
+            >
+              {startingMatch ? "Empezando…" : "Empezar partida"}
+            </button>
+          {/if}
+        </section>
+      {:else if match.status === "playing" && isHost}
         <div class="result-sheet">
           <MatchResultSheet
             players={resultPlayers}
@@ -297,10 +440,26 @@
             on:confirm={handleRecordResult}
           />
         </div>
+      {:else if match.status === "done" && isHost}
+        <button type="button" class="start-btn" disabled={starting} data-testid="new-match" on:click={handleNewMatch}>
+          {starting ? "Creando…" : "Otra partida"}
+        </button>
       {/if}
     {:else}
       <VoteSheet games={eligibleGames} currentVote={myVote} disabled={voting} on:vote={handleVote} />
     {/if}
+  {/if}
+
+  {#if isHost && session.status !== "ended"}
+    <button
+      type="button"
+      class="end-btn"
+      disabled={endingSession}
+      data-testid="end-session"
+      on:click={handleEndSession}
+    >
+      {endingSession ? "Terminando…" : "Terminar sesión"}
+    </button>
   {/if}
 {/if}
 
@@ -311,6 +470,49 @@
 </div>
 
 <style>
+  .roster {
+    margin-top: 1rem;
+    border-radius: 1rem;
+    background: rgba(30, 41, 59, 0.7);
+    padding: 1rem;
+  }
+  .roster h3 {
+    margin: 0 0 0.5rem;
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: #94a3b8;
+  }
+  .roster ul { margin: 0 0 0.75rem; padding: 0; list-style: none; display: flex; flex-wrap: wrap; gap: 0.4rem; }
+  .roster li {
+    border-radius: 999px;
+    background: #0f172a;
+    padding: 0.25rem 0.7rem;
+    font-size: 0.8rem;
+    color: #e2e8f0;
+  }
+  .roster li.muted { background: none; color: #64748b; }
+  .roster-btn {
+    width: 100%;
+    padding: 0.7rem 1rem;
+    border-radius: 999px;
+    border: 1px solid #475569;
+    background: transparent;
+    color: #e2e8f0;
+    font-size: 0.9rem;
+    cursor: pointer;
+  }
+  .end-btn {
+    margin-top: 1.5rem;
+    width: 100%;
+    padding: 0.7rem 1rem;
+    border-radius: 999px;
+    border: 1px solid #7f1d1d;
+    background: transparent;
+    color: #fca5a5;
+    font-size: 0.85rem;
+    cursor: pointer;
+  }
   .start-btn {
     margin-top: 1rem;
     width: 100%;

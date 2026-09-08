@@ -24,10 +24,21 @@
     error = null;
     try {
       const generated = generateQrToken();
+      const now = new Date().toISOString();
       const session = await collection("sessions").create({
         host: $user.id,
         status: "created",
         qr_token: generated,
+        started_at: now,
+      });
+      // El anfitrión está dentro desde el primer momento: si no, se quedaba
+      // fuera de su propia sesión y tenía que pulsar "Unirse" como un
+      // desconocido.
+      await collection("session_participants").create({
+        session: session.id,
+        player: $user.id,
+        status: "present",
+        joined_at: now,
       });
       token = generated;
       sessionId = session.id;
