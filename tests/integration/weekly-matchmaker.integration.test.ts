@@ -124,11 +124,12 @@ describe("weekly_matchmaker corre desde el cron", () => {
     );
 
     expect(proposals.items).toHaveLength(1);
-    expect(proposals.items[0].host).toBe(hostId);
-    expect(proposals.items[0].weekday).toBe("sat");
+    const proposal = proposals.items[0]!;
+    expect(proposal.host).toBe(hostId);
+    expect(proposal.weekday).toBe("sat");
     // El rango propuesto es el del anfitrión, no el solapamiento.
-    expect(proposals.items[0].start_hour).toBe(18);
-    expect(proposals.items[0].end_hour).toBe(23);
+    expect(proposal.start_hour).toBe(18);
+    expect(proposal.end_hour).toBe(23);
 
     const invites = await waitFor(
       async () =>
@@ -141,9 +142,10 @@ describe("weekly_matchmaker corre desde el cron", () => {
     );
 
     expect(invites.items).toHaveLength(1);
-    expect(invites.items[0].player).toBe(playerId);
-    expect(invites.items[0].response).toBe("pending");
-    expect(invites.items[0].invite_token.length).toBeGreaterThan(10);
+    const invite = invites.items[0]!;
+    expect(invite.player).toBe(playerId);
+    expect(invite.response).toBe("pending");
+    expect(invite.invite_token.length).toBeGreaterThan(10);
   });
 
   it("es idempotente: correrlo otra vez no duplica la propuesta", async () => {
