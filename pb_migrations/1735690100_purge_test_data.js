@@ -20,10 +20,8 @@
  * finge: la reversión es la copia de seguridad
  * `/var/www/session-manager/pb/pb_data.bak-20260908-163112` en el VPS.
  *
- * Quedan a propósito tres cuentas de depuración más antiguas
- * (dbgtest1788559378, dbgtest2_1788559407, emailtest1788560387, del
- * 2026-09-04) porque no eran parte de lo acordado. Borrarlas es una línea
- * más en la lista de abajo.
+ * Se borran también tres cuentas de depuración más antiguas (del 2026-09-04):
+ * no eran parte del acuerdo inicial, se preguntó al encontrarlas y entran.
  */
 
 // Orden: primero lo que apunta a otras cosas.
@@ -56,6 +54,11 @@ const PLAYERS = [
   "izkfoxoiqqvegps", // zz_verify_1788890992038
   "53z23qsif58g7qu", // zz_h_1788891031287
   "fvqxvouay17y8h2", // zz_g_1788891031287
+  // Cuentas de depuración más antiguas (2026-09-04): 0 XP, sin sesiones ni
+  // partidas colgando de ellas.
+  "94baz3zm1rxw5vo", // dbgtest1788559378
+  "sacc1oowmuj09zs", // dbgtest2_1788559407
+  "ig75r825s5e6bgv", // emailtest1788560387
 ];
 
 const ZBISHOP = "z9w3590au7n0vkj";
