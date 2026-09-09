@@ -8,6 +8,7 @@ Lee esto **antes de tocar el código**. Te ahorra ~30 min de exploración y evit
 - Stack: **SvelteKit** estático (frontend) + **PocketBase v0.37.3** (DB + auth + realtime + storage + hooks JS) + **Gemini 2.5 Flash** (genera logros al crear un juego).
 - Despliegue: **AWS Lightsail Ubuntu**, 1 GB RAM + 2 GB swap, **PM2** + **Nginx** + Certbot. Detalle en [DEPLOYMENT.md](DEPLOYMENT.md).
 - **227 unit tests + 12 integration tests** (a la fecha). El proyecto es estrictamente test-driven; **antes de aceptar un cambio sigue [VERIFICATION.md](VERIFICATION.md)**.
+- Consola local: **[nushell](https://www.nushell.sh/)**. Los comandos de este documento se ejecutan ahí. Dentro del VPS la consola es bash (ver [DEPLOYMENT.md](DEPLOYMENT.md)). En nu, `;` encadena y se detiene si un comando falla, así que hace el papel de `&&`.
 
 ## Mapa del repo
 
@@ -52,7 +53,7 @@ session-manager/
 
 ## Invariantes que NO debes romper
 
-1. **El schema vive en `src/lib/core/schema.ts`.** No edites `pb_migrations/*.js` ni `src/lib/core/records.ts` a mano. Cambia el manifest y corre `pnpm run build:migrations && pnpm run build:types`. CI revienta si commiteas drift.
+1. **El schema vive en `src/lib/core/schema.ts`.** No edites `pb_migrations/*.js` ni `src/lib/core/records.ts` a mano. Cambia el manifest y corre `pnpm run build:migrations; pnpm run build:types`. CI revienta si commiteas drift.
 2. **Los hooks JS no importan TS directamente.** Toda la lógica reutilizable se exporta desde `src/lib/core/hooks-entry.ts`, esbuild la bundlea a `pb_hooks/_core.js` (CJS, target es2020). Si añades una función al hook, exportarla desde `hooks-entry.ts` y correr `pnpm run build:hooks`.
 3. **Los hooks de PocketBase v0.23+ requieren `e.next()`** al final del callback. Sin él la cadena de eventos se corta y los siguientes hooks no se ejecutan. Wrappear en try/catch y loguear errores con `console.log` (van a stdout de PB y los ve PM2).
 4. **Los triggers de achievements pasan por nuestro DSL** (`evaluateTrigger` en `achievements.ts`), nunca `eval()` ni `Function()`. La salida de la IA se valida ANTES de persistirse. Si extiendes el DSL, añade tests en `achievements.test.ts` cubriendo el rechazo de input no permitido.
@@ -80,15 +81,15 @@ session-manager/
 | Type-check Svelte estricto | `pnpm run check` |
 | Type-check TS puro | `pnpm run typecheck` |
 | Build estático | `pnpm run build` |
-| Regenerar artefactos del manifest | `pnpm run build:migrations && pnpm run build:hooks && pnpm run build:types` |
-| Verificar que generados no driften | `pnpm run check:migrations && pnpm run check:hooks && pnpm run check:types` |
+| Regenerar artefactos del manifest | `pnpm run build:migrations; pnpm run build:hooks; pnpm run build:types` |
+| Verificar que generados no driften | `pnpm run check:migrations; pnpm run check:hooks; pnpm run check:types` |
 | Desplegar a VPS | `VPS_HOST=<ip> bash scripts/deploy.sh` |
 
 ## Cómo añadir cosas (recetas comunes)
 
 ### Añadir un campo a una colección
 1. Editar `src/lib/core/schema.ts`.
-2. `pnpm run build:migrations && pnpm run build:types`.
+2. `pnpm run build:migrations; pnpm run build:types`.
 3. **Para infra existente**: PocketBase NO migra automáticamente cambios de campos en una migración ya aplicada. Hay que crear una migración nueva. El generador (`build-migrations.ts`) soporta esto desde 2026-09-02: `1700000000_init.js` queda congelada a propósito (`INIT_COLLECTION_NAMES`, no cambia aunque `COLLECTIONS` crezca — ya está aplicada en prod), y una migración incremental nueva se agrega como un par `<TIMESTAMP>_<nombre>.js` + `write<Nombre>Migration()`, siguiendo el ejemplo de `writeMatchmakingMigration`. Para MVP en local simplemente borra `pb_data/data.db` y deja que se reaplique todo desde cero.
 4. `pnpm test` y `pnpm run test:integration`.
 

@@ -7,9 +7,9 @@ What a real user can actually click through and do, grouped by area, each tagged
 **v1–v5 are all live** as of 2026-09-02 (commit `897d906`, deployed same day) — just use https://gamesessions.danassistantassistant.website, including from your phone.
 
 To run a not-yet-deployed change locally instead (this repo uses `pnpm`, not `npm` — see `.env.example`'s neighbor `pnpm-workspace.yaml` for why):
-```
+```nu
 pnpm install
-pnpm run build:migrations && pnpm run build:hooks && pnpm run build:types
+pnpm run build:migrations; pnpm run build:hooks; pnpm run build:types
 # then run a local PocketBase (see docs/DEPLOYMENT.md §4-6) with pb_hooks/ and
 # pb_migrations/ from this checkout, and separately:
 pnpm run dev

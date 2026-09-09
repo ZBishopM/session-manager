@@ -6,6 +6,12 @@
 >
 > **Variables de entorno**: ver `.env.example` en la raíz del repo — lista completa de lo que leen los hooks vía `$os.getenv()`.
 
+**Dos consolas, dos máquinas.** Los bloques marcados `nu` se ejecutan en tu
+máquina, cuya consola es [nushell](https://www.nushell.sh/). Los marcados
+`bash` se ejecutan dentro del VPS, cuya consola es bash — allí no hay nu. La
+mayoría de este documento son pasos de servidor, así que casi todo es `bash`;
+lo local está en las §9 y §11.
+
 Stack en producción: **AWS Lightsail Ubuntu 1 GB RAM + 2 GB swap**, sin Docker, gestionado por **PM2** y expuesto vía **Nginx** con TLS de Let's Encrypt. La base de datos es SQLite embebida en PocketBase.
 
 ---
@@ -197,8 +203,9 @@ En Cloudflare (o donde tengas el dominio):
 
 Desde tu máquina local, en el repo:
 
-```bash
-# Compila todo lo derivado del manifest TS
+```nu
+# Compila todo lo derivado del manifest TS. Si uno falla, los siguientes no
+# corren: en nu cada línea depende de que la anterior fuera bien.
 pnpm run build:migrations
 pnpm run build:hooks
 pnpm run build:types
@@ -210,10 +217,15 @@ rsync -az --delete pb_hooks/      ubuntu@TU-IP:/home/ubuntu/session-manager/pb_h
 rsync -az --delete pb_migrations/ ubuntu@TU-IP:/home/ubuntu/session-manager/pb_migrations/
 
 # Reinicia PocketBase para que recargue hooks
-ssh ubuntu@TU-IP 'pm2 restart session-manager-pb'
+ssh ubuntu@TU-IP "pm2 restart session-manager-pb"
 ```
 
-O directamente: `VPS_HOST=TU-IP bash scripts/deploy.sh`.
+O directamente, también desde tu máquina — `deploy.sh` es un script bash, así
+que se le llama con `bash` explícito:
+
+```nu
+VPS_HOST=TU-IP bash scripts/deploy.sh
+```
 
 ---
 
@@ -236,24 +248,24 @@ En **Settings → Secrets and variables → Actions**:
 
 ## 11. Smoke test post-despliegue
 
-```bash
-# 1. PocketBase responde
-curl -s https://sessions.tudominio.com/api/health
-# {"code":200,"message":"API is healthy.","data":{...}}
+```nu
+let host = "https://sessions.tudominio.com"
 
-# 2. Frontend sirve
-curl -sI https://sessions.tudominio.com/ | head -1
-# HTTP/2 200
+# 1. PocketBase responde. http get parsea el JSON, así que sale un registro.
+http get $"($host)/api/health"
+# message: "API is healthy.", code: 200
 
-# 3. PWA artifacts presentes
-curl -sI https://sessions.tudominio.com/manifest.webmanifest | head -1
-curl -sI https://sessions.tudominio.com/sw.js | head -1
+# 2 y 3. Frontend y artefactos PWA, con su código de estado
+["/" "/manifest.webmanifest" "/sw.js"] | each {|p|
+    {ruta: $p, estado: (http get --full $"($host)($p)" | get status)}
+}
+# Esperado: 200 en las tres
 
 # 4. PM2 reporta el proceso
-ssh ubuntu@TU-IP 'pm2 list'   # session-manager-pb online
+ssh ubuntu@TU-IP "pm2 list"   # session-manager-pb online
 
 # 5. Logs en vivo (útil al crear el primer juego para ver si Gemini responde)
-ssh ubuntu@TU-IP 'pm2 logs session-manager-pb --lines 100'
+ssh ubuntu@TU-IP "pm2 logs session-manager-pb --lines 100"
 ```
 
 Si al crear un juego ves `[game_created] GEMINI_API_KEY not set, skipping…`, PM2 perdió la env var (suele pasar tras un `pm2 resurrect` sin el var presente). Re-arranca el proceso con la variable:

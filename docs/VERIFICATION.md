@@ -4,13 +4,18 @@ Checklist para correr **después de cualquier cambio** (tuyo, de un agente, manu
 
 Tiempo total: ~3-5 minutos en local, ~3 más para integración.
 
+Los bloques marcados `nu` se ejecutan en tu máquina con
+[nushell](https://www.nushell.sh/). Los marcados `bash` van dentro del VPS,
+cuya consola es bash — allí no hay nu. Cada línea de un bloque `nu` corre solo
+si la anterior fue bien, así que una lista seguida ya es fail-fast.
+
 ---
 
 ## A. El "smoke test rápido" (siempre)
 
 Estos cuatro comandos deben terminar sin errores. Si uno falla, **investiga antes de seguir** — no te limites a re-intentar.
 
-```bash
+```nu
 # 1. Type-check TS puro
 pnpm run typecheck
 
@@ -37,7 +42,7 @@ Test Files  21 passed (21)
 
 Tres pipelines distintos generan código que se commitea. Si alguno difiere del manifest, CI falla. Estos comandos regeneran y avisan si hay drift:
 
-```bash
+```nu
 pnpm run check:migrations   # pb_migrations/1700000000_init.js  vs  schema.ts
 pnpm run check:hooks        # pb_hooks/_core.js                 vs  hooks-entry.ts
 pnpm run check:types        # src/lib/core/records.ts           vs  schema.ts
@@ -53,7 +58,7 @@ Cada uno corre el generador y luego `git diff --exit-code <archivo>`. **Si algun
 
 Levantan una instancia real de PocketBase contra los `pb_migrations/` y `pb_hooks/` actuales. Tarda ~30s la primera vez (descarga el binario), ~3s después.
 
-```bash
+```nu
 pnpm run test:integration
 ```
 
@@ -66,7 +71,7 @@ Test Files  3 passed (3)
 
 Si quieres ver el stdout/stderr de PB durante el test (útil para debuggear hooks):
 
-```bash
+```nu
 PB_DEBUG=1 pnpm run test:integration
 ```
 
@@ -76,7 +81,7 @@ PB_DEBUG=1 pnpm run test:integration
 
 ## D. Verificación visual (cambios de UI)
 
-```bash
+```nu
 pnpm run dev
 ```
 
@@ -92,7 +97,7 @@ Abre <http://localhost:5173>, navega manualmente por:
 
 Para auth real necesitas PocketBase corriendo en local. Lo más simple:
 
-```bash
+```nu
 # Una sola vez:
 pnpm run fetch:pocketbase
 
@@ -106,7 +111,7 @@ pnpm run fetch:pocketbase
 
 Y crea el primer superuser:
 
-```bash
+```nu
 ./.pocketbase/0.37.3/pocketbase.exe superuser upsert admin@local.test 12345678
 ```
 
@@ -116,7 +121,7 @@ Y crea el primer superuser:
 
 ## E. Antes de commitear
 
-```bash
+```nu
 git status -s          # revisa qué archivos se mueven
 git diff               # lee el diff
 ```
@@ -129,18 +134,26 @@ Asegúrate de incluir los **archivos generados regenerados** (`pb_hooks/_core.js
 
 Tras `git push` (o tras correr `bash scripts/deploy.sh` manualmente):
 
-```bash
+```nu
 # Reemplaza la URL por la tuya
-HOST=https://sessions.tudominio.com
+let host = "https://sessions.tudominio.com"
 
-curl -s "$HOST/api/health" | head -c 100   # debe contener "API is healthy"
-curl -sI "$HOST/" | head -1                # debe ser 200
-curl -sI "$HOST/manifest.webmanifest" | head -1   # 200
-curl -sI "$HOST/sw.js" | head -1                  # 200
+# http get devuelve el cuerpo ya parseado: si /api/health responde JSON,
+# esto da un registro y no hace falta recortar la salida.
+http get $"($host)/api/health"        # → message: "API is healthy."
 
-# En el VPS:
-ssh ubuntu@TU-IP 'pm2 list'
-# Esperado: session-manager-pb │ online │ uptime corto si acabas de redeploy
+# Para el código de estado, pide la respuesta completa:
+["/" "/manifest.webmanifest" "/sw.js"] | each {|p|
+    {ruta: $p, estado: (http get --full $"($host)($p)" | get status)}
+}
+# Esperado: 200 en las tres
+```
+
+Y en el VPS, `pm2 list` debe mostrar `session-manager-pb │ online`, con
+uptime corto si acabas de redesplegar:
+
+```nu
+ssh ubuntu@TU-IP "pm2 list"
 ```
 
 Y prueba el flujo crítico desde el navegador:
