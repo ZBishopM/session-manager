@@ -2,11 +2,11 @@
 
 Historial cronológico (más reciente arriba) de los commits significativos. Cada línea = un commit en `main` con su SHA corto, su entregable y el delta de tests.
 
-## En curso (sin commitear todavía)
+## e10c886 — gemini refactor
 
 - **Pivot a Gemini para generación de logros**: `achievement-generator.ts` ahora exporta `buildGeminiRequest`/`extractGeminiText` y apunta a `gemini-2.5-flash` (`generativelanguage.googleapis.com/v1beta/models/.../generateContent`). El hook `pb_hooks/game_created.pb.js` lee `GEMINI_API_KEY`. Bundle `pb_hooks/_core.js` regenerado.
 - 17 tests del generador (de 20): se quitaron los 3 específicos de la API de Anthropic (cache_control, anthropic-beta, override de modelo).
-- `docs/DEPLOYMENT.md` reescrito para AWS Lightsail Ubuntu + 2 GB swap + PM2 + Nginx + Gemini key.
+- `docs/DEPLOYMENT.md` reescrito para AWS Lightsail Ubuntu + 2 GB swap + PM2 + Nginx + Gemini key (luego, 4178cd8: VPS Hetzner `agapornis`, sin swap).
 - `docs/TODO.md` actualizado al nuevo flujo.
 - `scripts/deploy.sh` apunta a `ubuntu@/home/ubuntu/session-manager` y reinicia con `pm2 restart session-manager-pb`.
 - Total tests: **227 unit + 12 integration** (todos verdes).

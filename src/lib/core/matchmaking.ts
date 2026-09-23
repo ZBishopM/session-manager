@@ -76,7 +76,7 @@ function overlapHours(aStart: number, aEnd: number, bStart: number, bEnd: number
  *
  * Per weekday: hosts are considered in descending capacity order (a
  * simple, deterministic v1 default — no fairness/rotation across weeks
- * yet, see pendientes/gamesessions.md). For each host, players are
+ * yet, see pendientes/archivo-2026-09-23/gamesessions.md). For each host, players are
  * greedily assigned if their max_group_size (if set) can fit 1 host +
  * however many players are already assigned to that host + this
  * candidate, and the player isn't already assigned to another host this

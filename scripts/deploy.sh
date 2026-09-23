@@ -17,7 +17,7 @@
 #     the app dir rather than siblings of it. nginx serves the frontend
 #     straight out of $VPS_APP_DIR/build. Confirmed 2026-09-02 by SSH
 #     recon of the actual running pm2 process — these paths previously
-#     didn't match reality; see pendientes/gamesessions.md for how that
+#     didn't match reality; see pendientes/archivo-2026-09-23/gamesessions.md for how that
 #     was found.)
 #   - PocketBase is running under PM2 as "session-manager-pb"
 #     (pm2 start ./pocketbase -- serve ..., see docs/DEPLOYMENT.md §6)

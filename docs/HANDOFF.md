@@ -112,7 +112,7 @@ session-manager/
 ## Pendiente (prioridad alta → baja)
 
 1. ~~**Realtime en `/session/[id]`**~~ — resuelto 2026-09-08. `subscribeRealtime()` en `src/routes/session/[id]/+page.svelte` se suscribe a `sessions`, `matches`, `session_participants`, `match_players` y `player_achievements`, y se da de baja en `onDestroy`. Sustituye a dos sondeos ("reconsulta a 0 ms y 600 ms" tras votar, y `[0, 700, 1600]` para los logros) que en producción llegaban tarde: votabas y no pasaba nada. Ese silencio es lo que enmascaró durante meses el `ReferenceError` de `tryCloseVoting`.
-2. **Consola del host enriquecida**: asignar/aleatorizar co-host, expulsar participantes, iniciar/terminar sesión, lanzar nueva partida (crea un `match` con `status="voting"`).
+2. **Consola del host enriquecida**: asignar/aleatorizar co-host y expulsar participantes. (Terminar sesión y "Otra partida" ya están: `handleEndSession` y `handleNewMatch` en `src/routes/session/[id]/+page.svelte`.)
 3. **Flujo de votación end-to-end**: integrar `<VoteSheet />` con `core.resolveVotes()`, mostrar tie-break al host.
 4. **Re-roll consumible**: gastar `players.re_rolls` cuando ganó "aleatorio" para sortear de nuevo (lógica en `voting.ts` ya soporta el flag, falta UI).
 5. **Subida de imágenes de juegos**: `<input type="file">` en `/games/new` enviado al campo `image` de la colección.

@@ -117,16 +117,15 @@ Or simpler for a quick look at just the PocketBase side: `pnpm run test:integrat
 
 These are real gaps, not just missing polish — worth knowing before you go looking for a button that isn't there:
 
-- **Ending a session independent of a match result** — today `sessions.status` only ever becomes `"ended"` as a side effect of recording a match result (v8 above). There's no separate "end session without playing" action.
 - **Co-host assignment** — `sessions.co_host` field exists, nothing in the UI sets it.
 - **Kicking a participant** — `session_participants.status` supports `"kicked"`, no UI action for it.
 - **Spending a re-roll** — the count displays on `/profile`, nothing lets you use one.
 - **Favorite categories** — field exists on the player record, no UI to set it.
-- **Manual host tie-break on a vote tie** — per `docs/BUSINESS_RULES.md` a tie should let the host decide; v2 auto-resolves it by random pick instead (deliberate MVP simplification, not silently dropped — see `pendientes/gamesessions.md`).
+- **Manual host tie-break on a vote tie** — per `docs/BUSINESS_RULES.md` a tie should let the host decide; v2 auto-resolves it by random pick instead (deliberate MVP simplification, not silently dropped — see `pendientes/archivo-2026-09-23/gamesessions.md`).
 - **Placement isn't read by the achievement trigger DSL yet** — `match_players.placement` (v8) is stored but `evaluateTrigger`'s stat surface (`total_wins`, `wins_on_game`, etc.) doesn't include it. Fine for now since nothing has proposed a placement-based achievement yet; extend the DSL when one does.
 
 ## Coming next (per the matchmaking plan)
 
-Full design in `C:\Users\obisp\.claude\plans\verify-what-s-missing-first-hashed-lovelace.md`. What's left, in build order:
-- **Web Push channel** — Discord and email are both live now. Web Push needs a spike first: PocketBase hooks run in Goja, a restricted JS VM, and the standard VAPID-signing library may not run there at all — see `pendientes/gamesessions.md` for the fallback plan (relay through in_out's n8n instance) if so.
+Design history in `pendientes/archivo-2026-09-23/gamesessions.md` ("In progress — weekly matchmaking"); live backlog on the Vikunja board (https://tareas.danassistantassistant.website, project session-manager). What's left, in build order:
+- **Web Push channel** — Discord and email are both live now. Web Push needs a spike first: PocketBase hooks run in Goja, a restricted JS VM, and the standard VAPID-signing library may not run there at all — see `pendientes/archivo-2026-09-23/gamesessions.md` for the fallback plan (relay through in_out's n8n instance) if so.
 - **Also not yet possible, from v4/v5**: no way to change an invite response once given (decline → re-accept isn't wired), no expiry sweep for old proposals that never got enough acceptances (`status: "expired"` exists in the schema, nothing sets it).

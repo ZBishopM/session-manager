@@ -9,7 +9,7 @@
  *
  * Pre-launch test data only — existing availabilities/match_proposals/
  * invites rows are cleared as part of this deploy rather than converted
- * (see pendientes/gamesessions.md), so this migration doesn't attempt a
+ * (see pendientes/archivo-2026-09-23/gamesessions.md), so this migration doesn't attempt a
  * time_slot -> hour range data conversion.
  */
 migrate(
