@@ -2,7 +2,7 @@
 
 ## Restricciones que mandan
 
-1. **VPS 1 GB RAM** — cada MB cuenta. Descarta runtimes pesados (JVM, .NET, Next.js SSR en Node con muchas dependencias).
+1. **VPS compartido y sin swap** — la máquina (`agapornis`, ~3,7 GB) hospeda además el correo, piles-game, n8n/postgres y Navidrome, así que lo que gaste este proyecto se lo quita a otro y un pico puede despertar al OOM killer. Descarta runtimes pesados (JVM, .NET, Next.js SSR en Node con muchas dependencias).
 2. **Tiempo a MVP mínimo** — descarta construir *from scratch* auth/DB/realtime/storage.
 3. **Mobile-first PWA** — debe funcionar offline-parcial y sentirse nativa.
 4. **Un solo desarrollador** probablemente (inferido) — descarta arquitecturas distribuidas.
@@ -18,7 +18,7 @@
                      │ HTTPS + SSE (realtime)
 ┌────────────────────▼────────────────────────────────────┐
 │  Nginx + Certbot (Let's Encrypt)                        │
-│  - Sirve /home/ubuntu/session-manager/frontend/         │
+│  - Sirve /var/www/session-manager/build/                │
 │  - Proxy a 127.0.0.1:8090 en /api/* y /_/               │
 │  - proxy_buffering off para SSE realtime                │
 └────────────────────┬────────────────────────────────────┘
@@ -40,21 +40,23 @@
         └────────────────────────┘
 ```
 
-### Presupuesto de RAM en Lightsail 1 GB + 2 GB swap
+### Lo que consume en la máquina compartida
 
 | Componente | RAM aprox. |
 |---|---|
-| Kernel + systemd + SSH + agentes Lightsail | ~150 MB |
 | Nginx | ~25 MB |
-| PM2 daemon (compartido con Art Chat / Piles) | ~50 MB |
+| PM2 daemon (compartido con Piles y los demás servicios) | ~50 MB |
 | PocketBase (idle) | ~40 MB |
 | PocketBase (pico realtime ~20 clientes) | ~90 MB |
-| Buffer SQLite + file cache Linux | ~200 MB |
-| **Total en pico** | **~555 MB** |
-| **Libre en RAM para otros servicios** | **~445 MB** |
-| **Swap configurado (2 GB)** | absorbe picos build/IA |
 
-`vm.swappiness=10` mantiene SQLite en RAM y solo paginiza presión real. Sin Docker (ahorra ~80 MB del daemon).
+Sin Docker: ahorra los ~80 MB del daemon, y de paso el despliegue es copiar
+un binario y reiniciar pm2.
+
+**No hay swap.** Es la restricción que más manda a la hora de compilar: en
+piles-game los `cargo build` van con `nice -n 19 … -j 1` justo por esto. Aquí
+no compilamos nada en el servidor — el frontend se construye en tu máquina o
+en CI y solo se sube el estático — así que el riesgo queda en el vecino, no en
+este proyecto.
 
 ## Decisiones clave (ADR-lite)
 

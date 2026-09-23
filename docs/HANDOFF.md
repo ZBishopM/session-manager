@@ -6,7 +6,7 @@ Lee esto **antes de tocar el código**. Te ahorra ~30 min de exploración y evit
 
 - App **mobile-first** para gestionar sesiones de juegos de mesa (ver [BUSINESS_RULES.md](BUSINESS_RULES.md)).
 - Stack: **SvelteKit** estático (frontend) + **PocketBase v0.37.3** (DB + auth + realtime + storage + hooks JS) + **Gemini 2.5 Flash** (genera logros al crear un juego).
-- Despliegue: **AWS Lightsail Ubuntu**, 1 GB RAM + 2 GB swap, **PM2** + **Nginx** + Certbot. Detalle en [DEPLOYMENT.md](DEPLOYMENT.md).
+- Despliegue: VPS Hetzner compartido `agapornis` (usuario `bicho`), **PM2** + **Nginx** + Certbot, sin Docker y **sin swap**. Automático: cada push a `main` que pase CI dispara `deploy.yml`. Detalle en [DEPLOYMENT.md](DEPLOYMENT.md).
 - **227 unit tests + 12 integration tests** (a la fecha). El proyecto es estrictamente test-driven; **antes de aceptar un cambio sigue [VERIFICATION.md](VERIFICATION.md)**.
 - Consola local: **[nushell](https://www.nushell.sh/)**. Los comandos de este documento se ejecutan ahí. Dentro del VPS la consola es bash (ver [DEPLOYMENT.md](DEPLOYMENT.md)). En nu, `;` encadena y se detiene si un comando falla, así que hace el papel de `&&`.
 

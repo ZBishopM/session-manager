@@ -153,7 +153,7 @@ Y en el VPS, `pm2 list` debe mostrar `session-manager-pb │ online`, con
 uptime corto si acabas de redesplegar:
 
 ```nu
-ssh ubuntu@TU-IP "pm2 list"
+ssh bicho@167.233.88.83 "pm2 list"
 ```
 
 Y prueba el flujo crítico desde el navegador:
@@ -172,8 +172,9 @@ Si **A.1-A.4 pasan** en local pero **CI falla**:
 - Frecuente: es Node version mismatch, missing env var en CI, o checks que solo CI corre (`check:migrations` etc.).
 
 Si **integration pasa local** pero **producción está caída**:
-- Versión de PocketBase del VPS distinta de la del CI/local: `ssh ubuntu@TU-IP './pocketbase --version'` debe dar `0.37.3`.
-- `GEMINI_API_KEY` no inyectada al proceso PM2: `pm2 logs session-manager-pb` mostrará `[game_created] GEMINI_API_KEY not set`.
+- Versión de PocketBase del VPS distinta de la del CI/local: `ssh bicho@167.233.88.83 "/var/www/session-manager/pb/pocketbase --version"` debe dar `0.37.3`.
+- `GEMINI_API_KEY` no inyectada al proceso PM2: `pm2 logs session-manager-pb` mostrará `[game_created] GEMINI_API_KEY not set`. Hoy **no está puesta** en producción, así que ese mensaje es lo normal, no un fallo.
+- Los `console.log` de los hooks **solo** van al log de pm2 (`~/.pm2/logs/session-manager-pb-out.log`). La tabla `_logs` de PocketBase guarda peticiones HTTP, no salida de hooks — no la busques ahí.
 - Nginx no está pasando SSE: revisar que el bloque tiene `proxy_buffering off` y `proxy_read_timeout 3600s`.
 
 ---

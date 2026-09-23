@@ -1,6 +1,14 @@
 # Despliegue y operación
 
-> **Nota (2026-09-02):** este documento describe un setup desde cero en un Lightsail nuevo de 1 GB, pero el despliegue real terminó en un VPS Hetzner compartido ya existente ("agapornis", ~3.7 GB RAM, comparte máquina con art-chat-server, piles-game, n8n/postgres de in_out, Navidrome) — de hecho la §3 más abajo ya lo insinúa ("Si ya usabas el VPS para Art Chat / Piles..."), pero la §1 sigue framing todo como instancia nueva. Confirmado por recon SSH directo: usuario real `bicho` (no `ubuntu`), PocketBase corre desde `/var/www/session-manager/pb/` (sin flags `--hooksDir`/`--migrationsDir` — los toma relativos a su cwd), el frontend se sirve desde `/var/www/session-manager/build/`. `scripts/deploy.sh` ya está corregido a estas rutas reales, y el deploy ya **no** es manual — el workflow `.github/workflows/deploy.yml` corre automático tras cada push a `main` que pasa CI (secretos/vars ya configurados). El resto de este documento (swap, nginx, certbot) no se re-verificó línea por línea contra la máquina real — tratarlo como referencia histórica/aspiracional para los pasos que no sean rutas, no como fuente de verdad 1:1. Ver `pendientes/gamesessions.md` para el hallazgo completo.
+> **El despliegue es automático.** `.github/workflows/deploy.yml` corre solo
+> tras cada push a `main` que pase CI; los secretos y variables ya están
+> configurados. La §9 ("primer despliegue manual") está solo por si hay que
+> hacerlo a mano alguna vez.
+>
+> **Ya no hay Lightsail** (confirmado 2026-09-09). Esto vive en el VPS
+> Hetzner compartido descrito en la §1. Lo que sigue verificado contra la
+> máquina real a esa fecha: host, usuario, rutas, proceso pm2 y despliegue
+> por CI. Lo de nginx y certbot no se re-comprobó línea por línea.
 >
 > **Backups (2026-09-02):** a diferencia del resto de este doc, esto sí está implementado y verificado — cron diario 03:00 en `bicho`'s crontab, `~/backups/backup.sh`, retiene los últimos 7 de `pb_data`, `stalwart-data` y `stalwart-etc` (los dos últimos vía un contenedor Docker desechable ya que los volúmenes son root-owned en el host). Es respaldo **local** (mismo disco) — protege contra migraciones malas o borrados accidentales, no contra falla del disco/hardware. Backup fuera de la máquina (Hetzner Storage Box, S3, etc.) queda pendiente, requiere elegir destino y credenciales.
 >
@@ -12,48 +20,36 @@ máquina, cuya consola es [nushell](https://www.nushell.sh/). Los marcados
 mayoría de este documento son pasos de servidor, así que casi todo es `bash`;
 lo local está en las §9 y §11.
 
-Stack en producción: **AWS Lightsail Ubuntu 1 GB RAM + 2 GB swap**, sin Docker, gestionado por **PM2** y expuesto vía **Nginx** con TLS de Let's Encrypt. La base de datos es SQLite embebida en PocketBase.
+Stack en producción: **VPS Hetzner compartido** (`agapornis`), sin Docker,
+gestionado por **PM2** y expuesto vía **Nginx** con TLS de Let's Encrypt. La
+base de datos es SQLite embebida en PocketBase.
 
 ---
 
-## 1. Crear la instancia en Lightsail (una sola vez)
+## 1. Dónde vive esto
 
-1. Consola Lightsail → **Create instance**.
-2. **Region:** la más cercana a tus jugadores.
-3. **Platform:** Linux/Unix · **Blueprint:** OS Only · **Ubuntu 22.04 LTS** (o 24.04).
-4. **Plan:** 1 GB RAM · 2 vCPU · 40 GB SSD (~$5/mes).
-5. **Identify your instance:** `session-manager` (o lo que prefieras).
-6. Tras crearla:
-   - **Networking → Public IPv4 → Attach static IP** (gratis si está adjunta a la instancia, ~$3/mes si la dejas suelta).
-   - **Networking → IPv4 Firewall** → añadir reglas para puertos `80/tcp` y `443/tcp`. SSH (22) viene por defecto. **Estos puertos se abren en la consola de Lightsail, no solo en `ufw`** — son dos firewalls independientes y ambos deben permitir el tráfico.
+| | valor |
+|---|---|
+| máquina | `agapornis`, 167.233.88.83 (Hetzner) |
+| usuario | `bicho` |
+| PocketBase | `/var/www/session-manager/pb/` |
+| frontend | `/var/www/session-manager/build/` |
+| proceso pm2 | `session-manager-pb`, escucha en `127.0.0.1:8090` |
+| logs de hooks | `~/.pm2/logs/session-manager-pb-out.log` |
+| consola | bash — **no hay nu en el VPS** |
 
----
+La máquina es **compartida**: conviven el correo (Stalwart), Postgres/n8n de
+in_out, piles-game (producción y beta) y Navidrome. ~3,7 GB de RAM y **sin
+swap**, así que cualquier compilación pesada se lanza con `nice -n 19 … -j 1`
+para no despertar al OOM killer sobre algo que importa.
 
-## 2. Configurar 2 GB de swap en la VPS
+PocketBase arranca **sin** los flags `--hooksDir` / `--migrationsDir`: los
+toma relativos a su cwd, que es `/var/www/session-manager/pb/`. Si el proceso
+se relanza desde otro directorio, deja de ver hooks y migraciones.
 
-1 GB de RAM es justo. Con 2 GB de swap, picos puntuales (build, IA, restart) se absorben sin OOM-killer.
-
-```bash
-# Conéctate por SSH (Lightsail provee llave .pem o tu CLI):
-ssh -i lightsail-key.pem ubuntu@TU-IP-PUBLICA
-
-# Crear archivo swap de 2 GB
-sudo fallocate -l 2G /swapfile
-sudo chmod 600 /swapfile
-sudo mkswap /swapfile
-sudo swapon /swapfile
-
-# Persistirlo en /etc/fstab para que se monte al reiniciar
-echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab
-
-# Reducir agresividad de swap (mejor para SQLite)
-echo 'vm.swappiness=10' | sudo tee /etc/sysctl.d/99-swappiness.conf
-sudo sysctl --system
-
-# Verificar
-free -h
-# Esperado: Swap: 2.0Gi
-```
+> Las secciones 3–8 describen cómo se monta todo esto desde cero. Están como
+> referencia para rehacerlo o levantar otro entorno, no como algo que haya que
+> ejecutar hoy.
 
 ---
 
@@ -63,7 +59,7 @@ free -h
 sudo apt update && sudo apt upgrade -y
 sudo apt install -y nginx certbot python3-certbot-nginx unzip ufw rsync
 
-# UFW alineado con el firewall de Lightsail
+# UFW
 sudo ufw default deny incoming
 sudo ufw allow 22/tcp
 sudo ufw allow 80/tcp
@@ -77,7 +73,7 @@ Si ya usabas el VPS para Art Chat / Piles, **PM2 y Node ya están instalados**. 
 curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
 sudo apt install -y nodejs
 sudo npm install -g pm2
-pm2 startup systemd -u ubuntu --hp /home/ubuntu
+pm2 startup systemd -u bicho --hp /home/bicho
 # Copia y ejecuta la línea sudo que PM2 imprime, para que arranque al boot.
 ```
 
@@ -86,8 +82,8 @@ pm2 startup systemd -u ubuntu --hp /home/ubuntu
 ## 4. Estructura del proyecto en el VPS
 
 ```bash
-mkdir -p /home/ubuntu/session-manager/{frontend,pb_data,pb_hooks,pb_migrations}
-cd /home/ubuntu/session-manager
+mkdir -p /var/www/session-manager/{frontend,pb_data,pb_hooks,pb_migrations}
+cd /var/www/session-manager
 
 # Bajar PocketBase v0.37.3 (la misma versión contra la que corren los integration tests)
 PB_VER=0.37.3
@@ -114,7 +110,7 @@ rm pb.zip
 ## 6. Arrancar PocketBase con PM2
 
 ```bash
-cd /home/ubuntu/session-manager
+cd /var/www/session-manager
 
 # Inyecta la GEMINI_API_KEY como variable de entorno del proceso
 GEMINI_API_KEY="pega_tu_key_aqui" \
@@ -122,9 +118,9 @@ GEMINI_API_KEY="pega_tu_key_aqui" \
     --name session-manager-pb \
     -- serve \
        --http=127.0.0.1:8090 \
-       --dir=/home/ubuntu/session-manager/pb_data \
-       --hooksDir=/home/ubuntu/session-manager/pb_hooks \
-       --migrationsDir=/home/ubuntu/session-manager/pb_migrations
+       --dir=/var/www/session-manager/pb_data \
+       --hooksDir=/var/www/session-manager/pb_hooks \
+       --migrationsDir=/var/www/session-manager/pb_migrations
 
 # Persistir la lista de procesos PM2 al boot
 pm2 save
@@ -148,7 +144,7 @@ server {
     server_name sessions.tudominio.com;   # <- cámbialo
 
     # 1. Frontend estático (SvelteKit adapter-static)
-    root /home/ubuntu/session-manager/frontend;
+    root /var/www/session-manager/frontend;
     index index.html;
     location / {
         try_files $uri $uri/ /index.html;
@@ -211,38 +207,45 @@ pnpm run build:hooks
 pnpm run build:types
 pnpm run build           # SvelteKit estático -> build/
 
-# Sube
-rsync -az --delete build/         ubuntu@TU-IP:/home/ubuntu/session-manager/frontend/
-rsync -az --delete pb_hooks/      ubuntu@TU-IP:/home/ubuntu/session-manager/pb_hooks/
-rsync -az --delete pb_migrations/ ubuntu@TU-IP:/home/ubuntu/session-manager/pb_migrations/
+# Sube. Ojo a la forma del destino: los hooks y las migraciones van DENTRO de
+# pb/, porque el cwd de PocketBase es /var/www/session-manager/pb y los busca
+# relativos a ahí.
+rsync -az --delete build/         bicho@167.233.88.83:/var/www/session-manager/build/
+rsync -az --delete pb_hooks/      bicho@167.233.88.83:/var/www/session-manager/pb/pb_hooks/
+rsync -az --delete pb_migrations/ bicho@167.233.88.83:/var/www/session-manager/pb/pb_migrations/
 
 # Reinicia PocketBase para que recargue hooks
-ssh ubuntu@TU-IP "pm2 restart session-manager-pb"
+ssh bicho@167.233.88.83 "pm2 restart session-manager-pb"
 ```
 
 O directamente, también desde tu máquina — `deploy.sh` es un script bash, así
-que se le llama con `bash` explícito:
+que se le llama con `bash` explícito. Ya trae `bicho` y
+`/var/www/session-manager` por defecto, así que basta con el host:
 
 ```nu
-VPS_HOST=TU-IP bash scripts/deploy.sh
+VPS_HOST=167.233.88.83 bash scripts/deploy.sh
 ```
 
 ---
 
-## 10. CI/CD desde GitHub (opcional)
+## 10. CI/CD desde GitHub
 
-`scripts/deploy.sh` ya está alineado con tu setup (`ubuntu`, `/home/ubuntu/session-manager`, `pm2 restart`). Para activar el workflow:
+**Esto es lo que corre hoy**, y por eso la §9 casi nunca hace falta.
+`scripts/deploy.sh` ya apunta al setup real (`bicho`,
+`/var/www/session-manager`, `pm2 restart`).
 
-En **Settings → Secrets and variables → Actions**:
+Lo configurado en **Settings → Secrets and variables → Actions**:
 
 | Tipo | Nombre | Valor |
 |---|---|---|
-| Secret | `SSH_KEY` | clave privada (la `.pem` de Lightsail o una ED25519 dedicada) |
-| Variable | `DEPLOY_HOST` | IP estática de Lightsail |
-| Variable | `DEPLOY_USER` | `ubuntu` |
-| Variable | `DEPLOY_APP_DIR` | `/home/ubuntu/session-manager` |
+| Secret | `SSH_KEY` | clave privada ED25519 dedicada al deploy |
+| Variable | `DEPLOY_HOST` | `167.233.88.83` |
+| Variable | `DEPLOY_USER` | `bicho` |
+| Variable | `DEPLOY_APP_DIR` | `/var/www/session-manager` |
 
-`deploy.yml` se dispara cuando CI termina verde sobre `main`. Mientras `DEPLOY_HOST` no exista como variable, el job se salta — sin red CI ✗.
+`deploy.yml` se dispara cuando CI termina verde sobre `main`. Mientras
+`DEPLOY_HOST` no exista como variable, el job se salta — así un clon del repo
+sin VPS no pone CI en rojo.
 
 ---
 
@@ -262,32 +265,38 @@ http get $"($host)/api/health"
 # Esperado: 200 en las tres
 
 # 4. PM2 reporta el proceso
-ssh ubuntu@TU-IP "pm2 list"   # session-manager-pb online
+ssh bicho@167.233.88.83 "pm2 list"   # session-manager-pb online
 
 # 5. Logs en vivo (útil al crear el primer juego para ver si Gemini responde)
-ssh ubuntu@TU-IP "pm2 logs session-manager-pb --lines 100"
+ssh bicho@167.233.88.83 "pm2 logs session-manager-pb --lines 100"
 ```
 
 Si al crear un juego ves `[game_created] GEMINI_API_KEY not set, skipping…`, PM2 perdió la env var (suele pasar tras un `pm2 resurrect` sin el var presente). Re-arranca el proceso con la variable:
 
+El binario y su cwd viven en `/var/www/session-manager/pb`, y PocketBase toma
+`pb_data`, `pb_hooks` y `pb_migrations` relativos a ahí — por eso no llevan
+flags:
+
 ```bash
-ssh ubuntu@TU-IP
+ssh bicho@167.233.88.83
+cd /var/www/session-manager/pb
 pm2 delete session-manager-pb
-GEMINI_API_KEY="..." pm2 start ./pocketbase --name session-manager-pb -- serve --http=127.0.0.1:8090 --dir=/home/ubuntu/session-manager/pb_data --hooksDir=/home/ubuntu/session-manager/pb_hooks --migrationsDir=/home/ubuntu/session-manager/pb_migrations
+GEMINI_API_KEY="..." pm2 start ./pocketbase --name session-manager-pb --cwd /var/www/session-manager/pb -- serve --http=127.0.0.1:8090
 pm2 save
 ```
 
-Para que la variable sobreviva a reboots, la opción más limpia es ponerla en `/home/ubuntu/.pm2.env` y pasarla al `pm2 start` con `--update-env`, o usar **PM2 ecosystem file**:
+Para que la variable sobreviva a reboots, la opción más limpia es ponerla en `/home/bicho/.pm2.env` y pasarla al `pm2 start` con `--update-env`, o usar **PM2 ecosystem file**:
 
-`/home/ubuntu/session-manager/ecosystem.config.cjs`:
+`/var/www/session-manager/pb/ecosystem.config.cjs`:
 
 ```js
 module.exports = {
   apps: [{
     name: "session-manager-pb",
     script: "./pocketbase",
-    args: "serve --http=127.0.0.1:8090 --dir=./pb_data --hooksDir=./pb_hooks --migrationsDir=./pb_migrations",
-    cwd: "/home/ubuntu/session-manager",
+    args: "serve --http=127.0.0.1:8090",
+    // Sin cwd correcto, PocketBase no encuentra hooks ni migraciones.
+    cwd: "/var/www/session-manager/pb",
     env: {
       GEMINI_API_KEY: "tu_key_real",
     },
@@ -301,28 +310,36 @@ Luego: `pm2 start ecosystem.config.cjs && pm2 save`. **Este archivo no debe comm
 
 ## 12. Backups
 
-PocketBase = un solo archivo SQLite en `pb_data/data.db`. Cron diario a las 3 AM:
+PocketBase = un solo archivo SQLite en `pb_data/data.db`.
+
+**Lo que corre hoy**: cron diario a las 03:00 en el crontab de `bicho`,
+`~/backups/backup.sh`. Retiene los últimos 7 de `pb_data`, `stalwart-data` y
+`stalwart-etc`.
+
+Es respaldo **local**, en el mismo disco: protege contra una migración mala o
+un borrado accidental, no contra fallo de disco. Sacar los backups de la
+máquina (Hetzner Storage Box, S3…) sigue pendiente y requiere elegir destino
+y credenciales.
+
+**Antes de cualquier cambio destructivo**, copia `pb_data` a mano — es un
+directorio pequeño y la copia es la única marcha atrás real:
 
 ```bash
-# /etc/cron.d/sessionmgr-backup  (root)
-0 3 * * * ubuntu /home/ubuntu/session-manager/pocketbase \
-  --dir=/home/ubuntu/session-manager/pb_data \
-  backup auto-$(date +\%F).zip >> /var/log/sessionmgr-backup.log 2>&1
+cd /var/www/session-manager/pb
+cp -a pb_data pb_data.bak-$(date +%Y%m%d-%H%M%S)
 ```
 
-PocketBase deja los backups en `pb_data/backups/`. Para mandarlos a S3/B2, añade un `rclone copy` después.
-
-**Lightsail snapshots** (consola → Snapshots) son el plan B: snapshots manuales antes de cualquier cambio destructivo. ~$0.05/GB/mes.
+Ojo al leer un `data.db` copiado: SQLite está en modo WAL, así que hay que
+llevarse también `data.db-wal` y `data.db-shm`, o verás datos viejos.
 
 ---
 
-## 13. Coste mensual estimado
+## 13. Coste
 
-| Partida | Coste |
-|---|---|
-| Lightsail 1 GB | $5 |
-| Lightsail static IP (adjunta a instancia) | $0 |
-| Snapshots (2 GB conservados) | ~$0.10 |
-| Dominio (prorrateado) | ~$1 |
-| Gemini API (cientos de juegos/mes) | <$0.50 (free tier suele bastar) |
-| **Total** | **~$6.50/mes** |
+El VPS es compartido con el correo, piles-game, n8n/postgres y Navidrome, así
+que este proyecto no tiene una factura propia: el coste marginal de añadirlo
+fue cero. Lo único que podría costar aparte es la API de Gemini, y hoy ni
+siquiera está en uso — `GEMINI_API_KEY` no está puesta en producción.
+
+(La tabla de costes que había aquí era de la instancia Lightsail, que ya no
+existe.)
